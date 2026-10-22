@@ -9,8 +9,10 @@ import {HOLIDAY_DATA_LICENSE} from './licenses.mjs';
 const KEY='blood-note-v1', $=s=>document.querySelector(s), app=$('#app'), dialog=$('#dialog');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>crypto.randomUUID();
-const START_PAGES={dashboard:'한눈에 보기',planner:'일정 시뮬레이터',records:'헌혈 기록'};
-const startPageOf=data=>Object.hasOwn(START_PAGES,data?.startPage)?data.startPage:'dashboard';
+const APP_PAGES=['dashboard','planner','records','settings'];
+const START_PAGES={dashboard:'한눈에 보기',planner:'일정 시뮬레이터',records:'헌혈 기록',last:'마지막 화면'};
+const startPageChoiceOf=data=>Object.hasOwn(START_PAGES,data?.startPage)?data.startPage:'dashboard';
+const startPageOf=data=>startPageChoiceOf(data)==='last'?(APP_PAGES.includes(data?.lastPage)?data.lastPage:'dashboard'):startPageChoiceOf(data);
 const DISPLAY_OPTIONS={balanceHighlight:{label:'잔여량 구간별 표시',description:'잔여량에 따라 카드 색과 계산량 충족 설명을 표시합니다.'},recordHighlight:{label:'헌혈 완료일 강조',description:'달력의 완료 날짜를 파란 배경과 ✓로 표시합니다.'}};
 const displayEnabled=(key,data=demoMode?realState:state)=>data.displayOptions?.[key]!==false;
 const fresh=()=>({version:1,rules:clone(DEFAULT_RULES),records:[],plans:[],complete:false,appliedImports:[]});
@@ -32,6 +34,7 @@ function validateState(raw){
   const appliedImports=Array.isArray(raw.appliedImports)?[...new Set(raw.appliedImports.filter(id=>typeof id==='string'&&id.length<=150))]:[];
   const result={version:1,rules,records:clean(raw.records,true),plans:clean(raw.plans,false),complete:raw.complete===true,appliedImports};
   if(Object.hasOwn(START_PAGES,raw.startPage))result.startPage=raw.startPage;
+  if(APP_PAGES.includes(raw.lastPage))result.lastPage=raw.lastPage;
   if(raw.displayOptions&&typeof raw.displayOptions==='object'&&!Array.isArray(raw.displayOptions)){
     const options={};
     for(const key of Object.keys(DISPLAY_OPTIONS))if(typeof raw.displayOptions[key]==='boolean')options[key]=raw.displayOptions[key];
@@ -52,7 +55,7 @@ catch{
 let state=fresh();
 try{const raw=appStorage.getItem(KEY);if(raw)state=validateState(JSON.parse(raw));}catch{storageNotice('저장된 기록을 읽지 못했습니다. 기존 저장 내용은 덮어쓰지 않습니다. 설정·백업에서 백업을 복원하거나 저장소를 확인해 주세요.');}
 // A restored Activity keeps its current page; a fresh launch opens the saved start page.
-let realState=null,demoMode=false,page=['dashboard','planner','records','settings'].includes(location.hash.slice(1))?location.hash.slice(1):startPageOf(state);
+let realState=null,demoMode=false,page=APP_PAGES.includes(location.hash.slice(1))?location.hash.slice(1):startPageOf(state);
 let selected=today(),calendarMonth=today().slice(0,7),recordFilter='all';
 const RECORDS_PER_PAGE=5;
 let recordPageIndex=0,holidayConsentId=null;
@@ -70,7 +73,8 @@ $('#toast').addEventListener('click',e=>{if(e.target.id==='undo'&&undoAction){co
 function persist(){
   if(demoMode)return true;
   if(storageFailed){toast('저장소를 열지 못해 변경 내용을 저장하지 않았습니다.');return false;}
-  try{appStorage.setItem(KEY,JSON.stringify(state));$('#storage-warning').hidden=true;return true;}
+  const next=startPageChoiceOf(state)==='last'?{...state,lastPage:page}:state;
+  try{appStorage.setItem(KEY,JSON.stringify(next));state=next;$('#storage-warning').hidden=true;return true;}
   catch{$('#storage-warning').textContent='기기에 저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해 주세요.';$('#storage-warning').hidden=false;toast('저장하지 못했습니다. 기존 기록을 유지합니다.');return false;}
 }
 function change(fn,message){
@@ -78,10 +82,13 @@ function change(fn,message){
   if(!persist()){state=before;render();return false;}
   render();if(message)toast(message,()=>{const current=state;state=before;if(!persist())state=current;render();});return true;
 }
-function setPage(p){page=p;location.hash=p;render();window.scrollTo({top:0});}
+function rememberPage(){if(!demoMode&&startPageChoiceOf(state)==='last'&&state.lastPage!==page)persist();}
+function setPage(p){if(!APP_PAGES.includes(p))return;page=p;location.hash=p;rememberPage();render();window.scrollTo({top:0});}
 window.bloodNoteHandleBack=()=>{
   if(dialog.open){dialog.close();return true;}
-  const home=startPageOf(demoMode?realState:state);
+  const preference=demoMode?realState:state;
+  if(startPageChoiceOf(preference)==='last')return false;
+  const home=startPageOf(preference);
   if(page!==home){setPage(home);return true;}
   return false;
 };
@@ -305,11 +312,11 @@ function recordsPage(){
     <section class="card"><div class="toolbar"><button class="primary small" data-action="add-record">+ 기록 추가</button><button class="secondary small" data-action="import-certificate">증명서 PDF 불러오기</button><button class="secondary small" data-action="import-text">여러 기록 붙여넣기</button></div><div id="records-list" class="card-head section-gap"><span class="muted" style="font-size:12px">총 ${state.records.length}건</span><select id="record-filter" style="width:150px"><option value="all" ${recordFilter==='all'?'selected':''}>모든 종류</option>${typeOptions(recordFilter)}</select></div>${list.length?`<div class="table-scroll"><table class="record-table" role="table" aria-label="완료한 헌혈 기록"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">헌혈일</th><th role="columnheader" scope="col">종류</th><th role="columnheader" scope="col">계산량</th><th role="columnheader" scope="col">관리</th></tr></thead><tbody role="rowgroup">${visible.map(e=>`<tr role="row"><td role="cell" class="record-date"><strong>${fmt(e.date,true)}</strong><br><small>${'일월화수목금토'[weekday(e.date)]}요일</small></td><td role="cell" class="record-type">${typeLabel(e.type)}</td><td role="cell" class="record-amount"><span class="record-amount-label">계산량 </span>${num(amount(e,state.rules))}mL</td><td role="cell" class="record-actions"><div class="actions"><button class="icon-button" data-action="edit-record" data-id="${escape(e.id)}">수정</button><button class="icon-button danger-text" data-action="delete-record" data-id="${escape(e.id)}">삭제</button></div></td></tr>`).join('')}</tbody></table></div>${pagination}`:empty('날짜와 종류, 두 가지만 입력하세요','공식 계정 자동 조회는 연결되어 있지 않습니다. 직접 입력하거나 날짜·종류가 있는 글을 붙여넣어 시작할 수 있어요.')}<p class="intro-note">표의 mL는 설정한 연간 한도 계산값입니다. 실제 성분 채혈액 전체 부피와 같은 의미는 아닙니다.</p></section>`;
 }
 function settingsPage(){return heading('MAKE IT YOURS','계산 기준과 보관','내 기준을 확인하고 기록을 안전하게 옮기세요.')+`
-  <section class="card start-page-card"><div class="card-head"><div><h2>첫 화면 설정</h2><p>앱을 새로 열 때 표시할 화면을 선택하세요.</p></div></div><label for="start-page">앱 시작 화면</label><select id="start-page" aria-describedby="start-page-help" ${demoMode?'disabled':''}>${Object.entries(START_PAGES).map(([value,label])=>`<option value="${value}" ${startPageOf(demoMode?realState:state)===value?'selected':''}>${label}</option>`).join('')}</select><p id="start-page-help" class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':'선택하면 자동 저장됩니다. 앱을 다시 열어도 유지되며, 백업에도 포함됩니다.'}</p></section>
+  <section class="card start-page-card"><div class="card-head"><div><h2>첫 화면 설정</h2><p>앱을 새로 열 때 표시할 화면을 선택하세요.</p></div></div><label for="start-page">앱 시작 화면</label><select id="start-page" aria-describedby="start-page-help" ${demoMode?'disabled':''}>${Object.entries(START_PAGES).map(([value,label])=>`<option value="${value}" ${startPageChoiceOf(demoMode?realState:state)===value?'selected':''}>${label}</option>`).join('')}</select><p id="start-page-help" class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':startPageChoiceOf(state)==='last'?'종료 전에 보던 화면(설정 포함)으로 다시 시작합니다. 팝업과 저장 전 입력은 다시 열지 않습니다. 선택은 자동 저장되며 백업에도 포함됩니다.':'선택하면 자동 저장됩니다. 앱을 다시 열어도 유지되며, 백업에도 포함됩니다.'}</p></section>
   <section class="card display-options-card"><div class="card-head"><div><h2>화면 표시</h2><p>두 표시를 각각 켜거나 끌 수 있습니다.</p></div></div>${Object.entries(DISPLAY_OPTIONS).map(([key,option])=>{const enabled=displayEnabled(key,demoMode?realState:state);return `<label class="display-toggle" for="display-${key}"><span class="display-toggle-copy"><strong>${option.label}</strong><small id="display-${key}-help">${option.description}</small></span><span class="display-toggle-control"><span aria-hidden="true">${enabled?'켬':'끔'}</span><input type="checkbox" role="switch" id="display-${key}" data-display-option="${key}" aria-describedby="display-${key}-help" ${enabled?'checked':''} ${demoMode?'disabled':''}></span></label>`;}).join('')}<p class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':'선택은 자동 저장되고 백업에 포함됩니다. 표시를 꺼도 기록과 계산 결과는 유지됩니다.'}</p></section>
-  <section class="card app-update-card"><div class="card-head"><div><h2>앱 업데이트</h2><p>현재 v2.2.0 · GitHub 정식 배포판</p></div></div><p class="settings-note">버튼을 누르고 데이터 사용 안내에 동의한 경우에만 새 버전을 확인합니다. 새 APK의 버전과 용량을 확인한 뒤 다운로드를 선택할 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button type="button" class="primary small" data-action="check-update" ${demoMode?'disabled':''}>업데이트 확인</button></div><p class="settings-note">보안 설정·앱 설치 제한에 따라 업데이트가 완료되지 않을 수 있습니다. 개인이 제작한 비공식 앱이며, 사용·설치·업데이트는 이용자 본인의 판단과 책임으로 진행해 주세요. 중요한 기록은 먼저 백업해 주세요.</p></section>
+  <section class="card app-update-card"><div class="card-head"><div><h2>앱 업데이트</h2><p>현재 v2.2.1 · GitHub 정식 배포판</p></div></div><p class="settings-note">버튼을 누르고 데이터 사용 안내에 동의한 경우에만 새 버전을 확인합니다. 새 APK의 버전과 용량을 확인한 뒤 다운로드를 선택할 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button type="button" class="primary small" data-action="check-update" ${demoMode?'disabled':''}>업데이트 확인</button></div><p class="settings-note">보안 설정·앱 설치 제한에 따라 업데이트가 완료되지 않을 수 있습니다. 개인이 제작한 비공식 앱이며, 사용·설치·업데이트는 이용자 본인의 판단과 책임으로 진행해 주세요. 중요한 기록은 먼저 백업해 주세요.</p></section>
   <div class="settings-grid"><section class="card"><div class="card-head"><div><h2>연간 계산 기준</h2><p>사용자 지정 계산값을 사용합니다.</p></div></div><form id="rules-form" class="form-stack"><label>연간 한도 (mL)<input name="cap" type="number" min="1" max="100000" step="1" required value="${state.rules.cap}"></label><div class="rules-table"><span class="rule-label">헌혈 종류</span><small>계산량 (mL)</small><small>이후 간격 (일)</small>${Object.entries(TYPES).map(([key,t])=>`<span class="rule-label">${t.label}</span><input aria-label="${t.label} 계산량" name="volume-${key}" type="number" min="1" max="10000" required value="${state.rules.volumes[key]}"><input aria-label="${t.label} 이후 간격" name="wait-${key}" type="number" min="1" max="1000" required value="${state.rules.waits[key]}">`).join('')}</div><div class="two-fields"><label>직전 1년 전혈 한도 (회)<input name="wholeLimit" type="number" min="1" max="1000" value="${state.rules.wholeLimit}" required></label><label>혈소판·혈소판 혈장 성분횟수 조건<input name="componentLimit" type="number" min="1" max="1000" value="${state.rules.componentLimit}" required></label></div><label>정확히 1년 전 같은 날짜의 기록<select name="boundary"><option value="exclude" ${state.rules.boundary==='exclude'?'selected':''}>합산에서 제외</option><option value="include" ${state.rules.boundary==='include'?'selected':''}>합산에 포함</option></select></label><p class="settings-note">1년은 365일 고정이 아닌 달력의 전년 같은 날짜로 계산합니다. 2월 29일의 전년 기준일은 2월 28일입니다. 경계일 포함 여부는 기관 안내와 맞춰 주세요.</p><div class="card-foot"><button type="button" class="secondary small" data-action="reset-rules">처음 기준으로</button><button class="primary small" type="submit">계산 기준 저장</button></div></form></section>
-  <div><section class="card"><div class="card-head"><h2>백업과 복원</h2><span class="badge">내 기기 보관</span></div><p class="settings-note">기록·계획·계산 설정과 저장된 공휴일 자료는 기기 안에서 암호화해 보관합니다. 앱이나 앱 데이터를 삭제하면 기록도 삭제됩니다. 기기를 바꾸거나 앱을 삭제하기 전에 백업해 주세요. 새 백업에는 기록·계획·계산 기준을 비밀번호로 암호화해 넣습니다. 비밀번호를 잊으면 백업을 복원할 수 없습니다. 이전 JSON 백업도 불러올 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button class="primary small" data-action="export-backup">암호화 백업 저장</button><button class="secondary small" data-action="import-backup">백업 불러오기</button><button class="secondary small" data-action="import-certificate">증명서 PDF 불러오기</button></div><p class="settings-note">기기에 저장한 대한적십자사 헌혈확인증명서(개인) PDF에서 날짜·종류를 읽어 검토 후 등록합니다. 인터넷 없이 동작하며 Android 15 이상에서 사용할 수 있습니다. 사진·스캔본은 지원하지 않습니다. 원본 파일은 변경하지 않습니다.</p><input type="file" id="backup-file" accept="application/json,.json" hidden><hr class="divider"><h3>연간채혈량 계산기 · 안드로이드 2.2.0 · 작은 월간 달력</h3><p class="settings-note">화면과 계산 기능은 인터넷 없이 사용할 수 있습니다. 공휴일 🔃 갱신과 앱 업데이트 확인은 매번 인터넷 사용 안내에 동의해야 연결됩니다. 취소하면 저장된 자료를 유지합니다. 외부 링크는 브라우저에서 열립니다. 백업은 파일 선택창에서 기기 저장 공간을 선택하면 데이터가 필요하지 않습니다.</p><p class="settings-note">새로 설치하면 기록과 계획은 비어 있습니다. 이전 앱에서 저장한 기록·계획은 위의 ‘백업 불러오기’로 옮겨 주세요. 휴대폰과 태블릿 화면 폭에 맞춰 배치가 자동으로 바뀝니다.</p><div class="actions"><button class="quiet" data-action="install">앱 정보 · 기록 옮기기</button><button class="quiet" data-action="demo">${demoMode?'예시 체험 종료':'예시로 둘러보기'}</button></div></section>
+  <div><section class="card"><div class="card-head"><h2>백업과 복원</h2><span class="badge">내 기기 보관</span></div><p class="settings-note">기록·계획·계산 설정과 저장된 공휴일 자료는 기기 안에서 암호화해 보관합니다. 앱이나 앱 데이터를 삭제하면 기록도 삭제됩니다. 기기를 바꾸거나 앱을 삭제하기 전에 백업해 주세요. 새 백업에는 기록·계획·계산 기준을 비밀번호로 암호화해 넣습니다. 비밀번호를 잊으면 백업을 복원할 수 없습니다. 이전 JSON 백업도 불러올 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button class="primary small" data-action="export-backup">암호화 백업 저장</button><button class="secondary small" data-action="import-backup">백업 불러오기</button><button class="secondary small" data-action="import-certificate">증명서 PDF 불러오기</button></div><p class="settings-note">기기에 저장한 대한적십자사 헌혈확인증명서(개인) PDF에서 날짜·종류를 읽어 검토 후 등록합니다. 인터넷 없이 동작하며 Android 15 이상에서 사용할 수 있습니다. 사진·스캔본은 지원하지 않습니다. 원본 파일은 변경하지 않습니다.</p><input type="file" id="backup-file" accept="application/json,.json" hidden><hr class="divider"><h3>연간채혈량 계산기 · 안드로이드 2.2.1 · 작은 월간 달력</h3><p class="settings-note">화면과 계산 기능은 인터넷 없이 사용할 수 있습니다. 공휴일 🔃 갱신과 앱 업데이트 확인은 매번 인터넷 사용 안내에 동의해야 연결됩니다. 취소하면 저장된 자료를 유지합니다. 외부 링크는 브라우저에서 열립니다. 백업은 파일 선택창에서 기기 저장 공간을 선택하면 데이터가 필요하지 않습니다.</p><p class="settings-note">새로 설치하면 기록과 계획은 비어 있습니다. 이전 앱에서 저장한 기록·계획은 위의 ‘백업 불러오기’로 옮겨 주세요. 휴대폰과 태블릿 화면 폭에 맞춰 배치가 자동으로 바뀝니다.</p><div class="actions"><button class="quiet" data-action="install">앱 정보 · 기록 옮기기</button><button class="quiet" data-action="demo">${demoMode?'예시 체험 종료':'예시로 둘러보기'}</button></div></section>
   <section class="card section-gap"><h2>앱 정보와 출처</h2><p class="settings-note">연간채혈량 계산기는 개인이 제작한 비공식 기록·계획 도구입니다. 대한적십자사 등 헌혈기관의 승인·인증을 받은 앱이 아닙니다.</p><button type="button" class="secondary license-menu" data-action="open-licenses" aria-haspopup="dialog"><span>오픈소스 라이선스</span><span aria-hidden="true">›</span></button><p class="settings-note">공휴일 자료의 출처와 라이선스 전문을 인터넷 없이 확인할 수 있습니다.</p></section>
   <section class="card section-gap"><h2>계산에 포함되는 것</h2><div class="settings-note"><p>① 선택한 기준일 직전 1년의 계산량<br>② 직전 헌혈 종류에 따른 대기 간격<br>③ 전혈 횟수와 혈소판·혈소판 혈장의 성분헌혈 횟수 조건<br>④ 앞선 가상 일정 및 뒤에 잡힌 계획에 미치는 영향</p><p>기본값 2,160 / 430 / 90 / 45mL는 사용자가 제시한 기준입니다. 실제 성분 채혈액 전체 부피를 뜻하지 않습니다.</p><p>혈소판·혈소판 혈장 계획은 직전 1년의 모든 성분헌혈 횟수(혈장 포함)에 새 1회를 더해 24회 조건을 확인합니다. 혈장만 선택할 때는 이 횟수 제한을 적용하지 않습니다.</p><p><a href="https://emi.bloodinfo.net/emi4.do?lang=ko" target="_blank" rel="noopener noreferrer">대한적십자사 헌혈 자격조건 ↗</a>의 간격·횟수 안내를 참고했습니다. 계산이 맞아도 문진·검사 등에서 헌혈이 제한될 수 있습니다.</p><p>공식 헌혈 기록 자동 조회, 자동 예약, 검사 결과 연동은 제공하지 않습니다.</p></div></section></div></div>`;}
 
@@ -438,7 +445,7 @@ function exportBackup(){
     dialog.close();download(`blood-note-backup-${today()}${demoMode?'-example':''}.json`,encrypted,'application/json');
   });
 }
-function installHelp(){openDialog('연간채혈량 계산기 2.2.0','작은 월간 달력',`<div class="modal-message"><p>화면, 기록 저장, 계산, 일정 계획은 인터넷 없이 사용할 수 있습니다. 공휴일 자료는 달력의 🔃 버튼을 누르고 이번 갱신의 인터넷 사용을 허용해야 갱신합니다. 앱 업데이트는 설정에서 직접 확인하고 데이터 사용에 동의했을 때만 연결합니다.</p><p class="settings-note">이전 앱에서 저장한 백업이 있다면 ⚙ 설정의 ‘백업 불러오기’를 통해 기록과 계획을 옮길 수 있습니다.</p><p class="settings-note">기록은 이 기기의 앱 저장 공간에 보관됩니다. 앱 삭제나 앱 데이터 삭제 전에 백업 파일을 저장해 주세요.</p></div>`);}
+function installHelp(){openDialog('연간채혈량 계산기 2.2.1','작은 월간 달력',`<div class="modal-message"><p>화면, 기록 저장, 계산, 일정 계획은 인터넷 없이 사용할 수 있습니다. 공휴일 자료는 달력의 🔃 버튼을 누르고 이번 갱신의 인터넷 사용을 허용해야 갱신합니다. 앱 업데이트는 설정에서 직접 확인하고 데이터 사용에 동의했을 때만 연결합니다.</p><p class="settings-note">이전 앱에서 저장한 백업이 있다면 ⚙ 설정의 ‘백업 불러오기’를 통해 기록과 계획을 옮길 수 있습니다.</p><p class="settings-note">기록은 이 기기의 앱 저장 공간에 보관됩니다. 앱 삭제나 앱 데이터 삭제 전에 백업 파일을 저장해 주세요.</p></div>`);}
 function toggleDemo(){
   selectedPlanIds.clear();
   if(demoMode){state=realState;realState=null;demoMode=false;toast('내 기록으로 돌아왔습니다.');}
@@ -532,7 +539,22 @@ window.bloodNoteCertificateEvent=(phase,payload)=>{
 dialog.addEventListener('change',e=>{
   if(e.target.dataset?.certificateIndex!==undefined&&certificateStage?.phase==='review'){const i=Number(e.target.dataset.certificateIndex);if(certificateStage.review[i]?.selectable){if(e.target.checked)certificateStage.selected.add(i);else certificateStage.selected.delete(i);updateCertificateSelection();}}
 });
+// Require a tap that both starts and ends outside the panel. Padding and drags
+// from inside the panel must not discard an editor or a pending date selection.
+let backdropTap=false;
+function outsideDialog(event){
+  if(event.target!==dialog)return false;
+  const bounds=dialog.getBoundingClientRect();
+  return event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom;
+}
+dialog.addEventListener('pointerdown',event=>{backdropTap=event.isPrimary!==false&&event.button===0&&outsideDialog(event);});
+dialog.addEventListener('pointercancel',()=>{backdropTap=false;});
+dialog.addEventListener('click',event=>{
+  const dismiss=backdropTap&&outsideDialog(event);backdropTap=false;
+  if(dismiss&&dialog.open){event.preventDefault();event.stopPropagation();dialog.close();}
+});
 dialog.addEventListener('close',()=>{
+  backdropTap=false;
   const date=dayPopup?.date;dayPopup=null;dialog.classList.remove('calendar-date-dialog');dialog.removeAttribute?.('aria-labelledby');
   if(date)app.querySelector?.(`[data-calendar-date="${date}"]`)?.focus({preventScroll:true});
   backupTask++;
@@ -602,7 +624,7 @@ document.addEventListener('click',e=>{
 });
 $('#quick-add').onclick=openRecordChoices;$('#exit-demo').onclick=toggleDemo;$('#install').onclick=installHelp;
 
-window.addEventListener('hashchange',()=>{const next=location.hash.slice(1);if(['dashboard','planner','records','settings'].includes(next)&&page!==next){page=next;render();}});
+window.addEventListener('hashchange',()=>{const next=location.hash.slice(1);if(APP_PAGES.includes(next)&&page!==next){page=next;rememberPage();render();}});
 if(!storageFailed)persist();
 render();
 if('ResizeObserver'in window){

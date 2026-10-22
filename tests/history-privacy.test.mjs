@@ -28,7 +28,7 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
   const cache=new Map([['blood-note-v1',JSON.stringify(initial)]]);
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
   const document={querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn};
-  const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener(){},scrollTo(){},BloodNoteAndroid:{
+  const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,scrollTo(){},BloodNoteAndroid:{
     requestHolidayConsent:id=>prompts.push(id),finishHolidayRefresh:id=>finished.push(id),saveText:(name,mime,text)=>exports.push({name,mime,text})}};
   const payload=engine.clone(HOLIDAY_SNAPSHOT.years);payload[2026]['2026-10-20']=['임시공휴일 테스트'];
   const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...certificate,today:()=>currentDate,
@@ -183,7 +183,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.2.0/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.2.1/);
   assert.equal(h.requests.length,0);
 });
 
@@ -194,7 +194,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v2.2.0/);
+  assert.match(h.html(),/현재 v2.2.1/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -322,6 +322,82 @@ test('Every start-page choice survives a cold launch, navigation and record edit
     assert.deepEqual(reopened.read(),h.read());assert.equal(reopened.requests.length,0);
     assert.equal(h.relaunch('#settings').run('page'),'settings');
   }
+  assert.equal(h.requests.length,0);
+});
+
+test('Last screen starts on the actual last main or settings page after a cold launch, with no network',()=>{
+  const h=harness(201,{hash:''}),original=h.read();
+  h.click('settings');h.change('start-page','last');
+  assert.match(h.html(),/<option value="last" selected>마지막 화면<\/option>/);
+  assert.match(h.html(),/설정 포함/);
+  assert.equal(h.read().lastPage,'settings');
+  for(const page of ['dashboard','planner','records','settings']){
+    h.click(page);
+    const saved=h.read(),reopened=h.relaunch();
+    assert.equal(saved.startPage,'last');assert.equal(saved.lastPage,page);
+    assert.equal(reopened.run('page'),page);assert.deepEqual(reopened.read(),saved);
+    assert.deepEqual(saved.records,original.records);assert.deepEqual(saved.plans,original.plans);
+    assert.deepEqual(saved.rules,original.rules);assert.equal(reopened.requests.length,0);
+    assert.equal(reopened.elements.get('#dialog').open,undefined);
+  }
+  assert.equal(h.requests.length,0);
+});
+
+test('Last-screen navigation writes only on actual page changes; undo preserves the currently viewed screen',()=>{
+  const h=harness(3,{hash:''});h.click('settings');h.change('start-page','last');
+  let writes=0;const write=h.storage.setItem;
+  h.storage.setItem=(key,value)=>{writes++;write(key,value);};
+  h.click('records');assert.equal(writes,1);
+  h.click('records');h.run('render();refreshLocalDay()');assert.equal(writes,1);
+  h.click('delete-record',{id:'record-0'});h.click('planner');h.run('undoAction()');
+  assert.equal(h.read().records.length,3);assert.equal(h.read().lastPage,'planner');
+  assert.equal(h.relaunch().run('page'),'planner');
+  h.run("location.hash='#records'");h.events['window:hashchange']();
+  assert.equal(h.read().lastPage,'records');assert.equal(h.relaunch().run('page'),'records');
+  h.click('settings');h.change('start-page','dashboard');const saved=h.read(),previousWrites=writes;
+  h.click('records');h.click('planner');assert.equal(writes,previousWrites);
+  assert.deepEqual(h.read(),saved);assert.equal(h.relaunch().run('page'),'dashboard');
+});
+
+test('Last-screen mode closes dialogs first then exits from the current page instead of forcing a different page',()=>{
+  const h=harness(3,{hash:''});h.click('settings');h.change('start-page','last');
+  for(const page of ['dashboard','planner','records','settings']){
+    h.click(page);h.elements.get('#dialog').showModal();
+    assert.equal(h.window.bloodNoteHandleBack(),true);assert.equal(h.elements.get('#dialog').open,false);
+    assert.equal(h.window.bloodNoteHandleBack(),false);assert.equal(h.run('page'),page);
+    assert.equal(h.relaunch().run('page'),page);
+  }
+});
+
+test('Missing or unsafe remembered pages fall back safely; failed navigation writes retain existing records',()=>{
+  for(const lastPage of [undefined,null,'last','__proto__','https://example.com',{},[]]){
+    const h=harness(0,{savedState:{...fixture(3),startPage:'last',lastPage},hash:''});
+    assert.equal(h.run('page'),'dashboard');assert.equal(h.read().records.length,3);
+    assert.equal(h.read().lastPage,'dashboard');assert.equal(h.run('storageFailed'),false);
+  }
+  const h=harness(3,{hash:''});h.click('settings');h.change('start-page','last');h.click('planner');
+  const saved=h.read(),write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};
+  h.click('records');assert.equal(h.run('page'),'records');assert.deepEqual(h.read(),saved);
+  assert.equal(h.relaunch().run('page'),'planner');
+  assert.equal(h.window.bloodNoteHandleBack(),false);
+  h.storage.setItem=write;h.click('records');assert.equal(h.relaunch().run('page'),'records');
+  assert.equal(h.read().records.length,3);assert.equal(h.requests.length,0);
+});
+
+test('Last-screen preference survives encrypted backup, restore, Activity recreation and isolated demo browsing',async()=>{
+  const h=harness(3,{hash:''});h.click('settings');h.change('start-page','last');h.click('planner');
+  h.click('export-backup');await h.password('valid-test-password');
+  const encrypted=h.exports[0].text;
+  const exported=JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password'));
+  assert.equal(exported.startPage,'last');assert.equal(exported.lastPage,'planner');
+  h.click('settings');h.change('start-page','records');
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
+  assert.equal(h.read().startPage,'last');assert.equal(h.read().lastPage,'settings');
+  assert.deepEqual(h.read().records,exported.records);assert.equal(h.relaunch().run('page'),'settings');
+  const restored=h.relaunch('#records');assert.equal(restored.run('page'),'records');assert.equal(restored.read().lastPage,'records');
+  h.click('planner');const saved=h.read();h.click('demo');h.click('records');h.click('settings');
+  h.change('start-page','last');assert.deepEqual(h.read(),saved);assert.equal(h.relaunch().run('page'),'planner');
   assert.equal(h.requests.length,0);
 });
 

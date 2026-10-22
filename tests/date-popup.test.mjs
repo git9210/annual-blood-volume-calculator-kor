@@ -15,6 +15,7 @@ function harness({records=[],plans=[]}={}){
   const events={},nodes=new Map(),cache=new Map();
   const node=key=>({innerHTML:'',textContent:'',dataset:{},style:{},open:false,
     classList:{add(){},remove(){},toggle(){}},setAttribute(){},removeAttribute(){},querySelectorAll:()=>[],querySelector:()=>null,focus(){},
+    getBoundingClientRect:()=>({left:20,right:380,top:200,bottom:700}),
     addEventListener:(type,fn)=>events[key+':'+type]=fn,removeEventListener(){},
     showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const m of readFileSync(new URL('index.html',root),'utf8').matchAll(/id="([^"]+)"/g))nodes.set('#'+m[1],node('#'+m[1]));
@@ -31,6 +32,7 @@ function harness({records=[],plans=[]}={}){
   vm.runInContext(source,context);
   const click=(action,data={})=>events['doc:click']({target:{closest:s=>s==='[data-action]'?{dataset:{action,...data},disabled:false}:null},preventDefault(){}});
   return {nodes,click,run:code=>vm.runInContext(code,context),read:()=>JSON.parse(storage.getItem('blood-note-v1')),
+    pointer:(event,{x=10,y=100,inside=false,button=0,isPrimary=true}={})=>{let prevented=false,stopped=false;events['#dialog:'+event]?.({target:nodes.get(inside?'#dialog-content':'#dialog'),clientX:x,clientY:y,button,isPrimary,preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});return {prevented,stopped};},
     html:()=>nodes.get('#dialog-content').innerHTML,app:()=>nodes.get('#app').innerHTML,
     open:()=>nodes.get('#dialog').open,requests:()=>requests,writes:()=>writes,fail:value=>fail=value,
     today:(value,refresh=false)=>{date=value;if(refresh)window.bloodNoteRefreshDay();}};
@@ -107,6 +109,44 @@ test('Android back-style dialog close cancels unsaved selection and clears trans
   const h=harness(),before=h.read();h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'platelet'});
   h.nodes.get('#dialog').close();assert.equal(h.run('dayPopup'),null);h.click('day-confirm');assert.deepEqual(h.read(),before);
   assert.equal(h.requests(),0);
+});
+
+test('One outside tap dismisses record choices, manual editor and date popup without saving or passing the tap through',()=>{
+  const h=harness({plans:[{id:'kept',date:'2027-02-19',type:'plasma'}]}),before=h.read(),writes=h.writes();
+  for(const open of [()=>h.nodes.get('#quick-add').onclick(),()=>h.click('add-record'),()=>{h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'whole'});}]){
+    open();assert.equal(h.open(),true);h.pointer('pointerdown');
+    assert.deepEqual(h.pointer('click'),{prevented:true,stopped:true});
+    assert.equal(h.open(),false);assert.equal(h.run('dayPopup'),null);
+    assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);
+  }
+  h.click('day-confirm');assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
+});
+
+test('Inner content, dialog padding, interrupted gestures and inside-to-outside drags never dismiss the popup',()=>{
+  const h=harness();h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'platelet'});
+  const selected=h.html();
+  for(const position of [{x:100,y:300,inside:true},{x:21,y:201},{x:380,y:700}]){
+    h.pointer('pointerdown',position);h.pointer('click',position);assert.equal(h.open(),true);
+  }
+  h.pointer('pointerdown',{x:100,y:300,inside:true});h.pointer('click');assert.equal(h.open(),true);
+  h.pointer('pointerdown');h.pointer('pointercancel');h.pointer('click');assert.equal(h.open(),true);
+  h.pointer('pointerdown',{button:2});h.pointer('click');assert.equal(h.open(),true);
+  h.pointer('pointerdown',{isPrimary:false});h.pointer('click');assert.equal(h.open(),true);
+  h.pointer('pointerdown');h.pointer('click',{x:100,y:300,inside:true});assert.equal(h.open(),true);
+  assert.equal(h.html(),selected);assert.equal(h.read().plans.length,0);
+  h.pointer('pointerdown');h.pointer('click');assert.equal(h.open(),false);
+  h.click('day',{date:'2027-02-19'});h.pointer('click');assert.equal(h.open(),true);
+  assert.match(h.html(),/data-action="day-confirm" disabled/);
+});
+
+test('Backdrop dismissal runs existing PDF and backup cancellation cleanup and allows subsequent dialogs',()=>{
+  const h=harness(),before=h.read();
+  h.run("window.cancelledImports=0;window.BloodNoteAndroid={cancelCertificateImport(){window.cancelledImports++;}};certificateStage={phase:'reading'};openDialog('PDF','', '<p>Reading</p>')");
+  const previous=h.run('backupTask');h.pointer('pointerdown');h.pointer('click');
+  assert.equal(h.run('window.cancelledImports'),1);assert.equal(h.run('certificateStage'),null);
+  assert.equal(h.run('backupTask'),previous+1);assert.deepEqual(h.read(),before);
+  h.nodes.get('#quick-add').onclick();assert.equal(h.open(),true);
+  h.click('close-dialog');assert.equal(h.open(),false);
 });
 
 test('Only actual donations get completed-day emphasis; past or due plans do not, and undo restores it',()=>{

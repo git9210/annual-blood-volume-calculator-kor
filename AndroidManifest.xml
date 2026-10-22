@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="kr.bloodnote.app" android:versionCode="18" android:versionName="2.2.0">
+    package="kr.bloodnote.app" android:versionCode="19" android:versionName="2.2.1">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
