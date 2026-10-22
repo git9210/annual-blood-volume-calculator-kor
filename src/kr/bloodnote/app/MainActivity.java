@@ -41,7 +41,7 @@ import java.util.Map;
 import java.util.Set;
 import org.json.JSONObject;
 
-/** Local-only application shell. Only the explicit holiday refresh can fetch data. */
+/** Offline-first shell. Holiday refresh and update requests require explicit native consent. */
 public final class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String HOME = "https://" + HOST + "/assets/index.html";
@@ -71,6 +71,7 @@ public final class MainActivity extends Activity {
     private AlertDialog holidayConsent;
     private String holidayConsentId;
     private boolean resumed;
+    private AppUpdater updater;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -79,6 +80,7 @@ public final class MainActivity extends Activity {
         setContentView(root);
         configureInsets(root);
         secureStore = new SecureStore(this);
+        updater = new AppUpdater(this, () -> resumed && !isFinishing() && !isDestroyed());
         certificateImporter = new CertificateImporter(this, (phase, payload) -> {
             if (web != null && !isFinishing() && !isDestroyed())
                 web.evaluateJavascript("if(window.bloodNoteCertificateEvent)window.bloodNoteCertificateEvent(" + JSONObject.quote(phase) + "," + payload + ");", null);
@@ -236,6 +238,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void openLink(String url) { runOnUiThread(() -> openExternal(url)); }
         @JavascriptInterface public void cancelExitHint() { runOnUiThread(MainActivity.this::resetExitHint); }
         @JavascriptInterface public void importCertificate() { runOnUiThread(() -> certificateImporter.choose()); }
+        @JavascriptInterface public void requestAppUpdate() { runOnUiThread(() -> { resetExitHint(); updater.request(); }); }
         @JavascriptInterface public void cancelCertificateImport() { runOnUiThread(() -> certificateImporter.cancel()); }
         @JavascriptInterface public void requestHolidayConsent(String requestId) {
             if (requestId == null || !requestId.matches("[a-zA-Z0-9-]{1,64}")) return;
@@ -322,6 +325,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent result) {
         super.onActivityResult(requestCode, resultCode, result);
+        if (updater != null && updater.result(requestCode, resultCode)) return;
         Uri uri = resultCode == RESULT_OK && result != null ? result.getData() : null;
         boolean contentUri = uri != null && "content".equals(uri.getScheme());
         if (requestCode == CertificateImporter.PICK_PDF) {
@@ -429,6 +433,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        if (updater != null) updater.resume();
         if (web != null) {
             web.onResume();
             web.evaluateJavascript("if(typeof window.bloodNoteRefreshDay==='function')window.bloodNoteRefreshDay();", null);
@@ -436,6 +441,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false;
+        if (updater != null) updater.pause();
         completeHolidayConsent(false);
         holidayAccess.clear();
         resetExitHint();
@@ -452,6 +458,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         resumed = false;
+        if (updater != null) updater.destroy();
         completeHolidayConsent(false);
         holidayAccess.clear();
         if (certificateImporter != null) certificateImporter.cancel();

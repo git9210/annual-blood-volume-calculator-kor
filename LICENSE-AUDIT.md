@@ -1,3 +1,18 @@
+# 2.2.0 변경 기록 (2026-10-22)
+
+설정의 수동 앱 업데이트 기능을 추가했습니다. Android 시스템의 HTTPS 통신, JSON, 패키지 검사, 설치 화면, ContentProvider API와 Java의 SHA-256을 사용하며, 새 외부 라이브러리·폰트·이미지·데이터 파일은 번들하지 않았습니다. 기존 공휴일 MIT 파일과 앱 내 전문, 암호화 저장 형식은 그대로입니다.
+
+| 항목 | 이번 변경 |
+| --- | --- |
+| 업데이트 정보 | 사용자가 매번 동의한 후 지정 GitHub 공개 저장소의 정식 Release API 조회. Release 본문·이미지는 복제하거나 화면에 표시하지 않음 |
+| 업데이트 파일 | 지정 저장소의 Small APK만 다운로드. 크기·SHA-256·동일 패키지·동일 서명·새 versionCode 검사 후 Android 설치 화면으로 전달 |
+| 외부 SDK | 추가 없음. Gradle·AndroidX·업데이트 SDK·광고/분석 SDK 미사용 |
+| Android 권한 | 기존 INTERNET에 REQUEST_INSTALL_PACKAGES 추가. 사용자가 기기 설정 및 설치 화면에서 결정. 근처 기기·위치 권한 추가 없음 |
+| 개인 정보 | 헌혈 기록·계획·증명서·백업 전송 없음. GitHub에는 IP 등 통신 정보가 전달됨 |
+| 안내 | 데이터 사용, 기기 보안에 따른 설치 실패 가능성, 개인 제작 비공식 앱, 이용자의 판단·책임 및 기록 백업 안내 |
+
+참고: [GitHub Release API](https://docs.github.com/en/rest/releases/releases), [Android 설치 허용 확인](https://developer.android.com/reference/android/content/pm/PackageManager#canRequestPackageInstalls()), [Android 설치 요청](https://developer.android.com/reference/android/content/Intent#ACTION_INSTALL_PACKAGE). 기존 전체 코드의 라이선스를 새로 부여하거나 저작권을 변경하지 않았습니다.
+
 # 2.1.1 변경 기록 (2026-10-22)
 
 잔여량 구간 배지 제거와 두 가지 화면 표시의 켜기·끄기 설정을 추가했습니다. 외부 코드·이미지·폰트·데이터는 새로 포함하지 않았습니다. 기존 공휴일 자료, MIT 전문, 앱 내 라이선스 메뉴 및 암호화 저장 방식을 유지합니다. 버전 표기는 이번에 2.1.1을 사용하며 이후 README의 변경 규모별 규칙을 적용합니다.

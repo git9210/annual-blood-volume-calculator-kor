@@ -450,3 +450,6 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .display-toggle input[type=checkbox]:checked::before{transform:translateX(18px)}
 .display-toggle input[type=checkbox]:disabled{opacity:.5;cursor:not-allowed}
 .display-options-card>.settings-note{margin-top:10px}
+
+.app-update-card{margin-bottom:22px}
+.app-update-card .settings-note+.settings-note{margin-top:10px}

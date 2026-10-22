@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="kr.bloodnote.app" android:versionCode="17" android:versionName="2.1.1">
+    package="kr.bloodnote.app" android:versionCode="18" android:versionName="2.2.0">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
         android:allowBackup="false" android:fullBackupContent="false"
@@ -10,6 +11,8 @@
         android:supportsRtl="true" android:enableOnBackInvokedCallback="true">
         <service android:name=".CertificateService" android:exported="false"
             android:isolatedProcess="true" android:process=":certificate" android:stopWithTask="true" />
+        <provider android:name=".UpdateApkProvider" android:authorities="kr.bloodnote.app.updates"
+            android:exported="false" android:grantUriPermissions="true" />
         <activity android:name=".MainActivity" android:exported="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize">

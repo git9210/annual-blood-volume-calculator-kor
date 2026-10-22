@@ -183,8 +183,36 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.1.1/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.2.0/);
   assert.equal(h.requests.length,0);
+});
+
+test('App updates are manual, separate from holiday consent and never mutate records or preferences',()=>{
+  const h=harness(201);let updates=0;
+  h.window.BloodNoteAndroid.requestAppUpdate=()=>updates++;
+  const saved=h.read();
+  for(const page of ['dashboard','planner','records','settings'])h.click(page);
+  assert.equal(updates,0);assert.equal(h.requests.length,0);
+  assert.match(h.html(),/data-action="check-update"/);
+  assert.match(h.html(),/현재 v2.2.0/);
+  assert.match(h.html(),/데이터 사용 안내에 동의/);
+  assert.match(h.html(),/보안 설정·앱 설치 제한/);
+  assert.match(h.html(),/이용자 본인의 판단과 책임/);
+  h.click('check-update');assert.equal(updates,1);
+  assert.equal(h.prompts.length,0);assert.equal(h.requests.length,0);
+  assert.deepEqual(h.read(),saved);
+  const reopened=h.relaunch();assert.deepEqual(reopened.read(),saved);assert.equal(reopened.requests.length,0);
+});
+
+test('Demo and absent Android update bridge do not start update work or alter saved data',()=>{
+  const h=harness(2);let updates=0;
+  h.window.BloodNoteAndroid.requestAppUpdate=()=>updates++;
+  const saved=h.read();h.click('demo');h.click('settings');
+  assert.match(h.html(),/data-action="check-update" disabled/);
+  h.click('check-update');assert.equal(updates,0);assert.deepEqual(h.read(),saved);
+  h.click('demo');delete h.window.BloodNoteAndroid.requestAppUpdate;
+  h.click('check-update');assert.match(h.elements.get('#toast').innerHTML,/업데이트 기능을 열지 못했습니다/);
+  assert.deepEqual(h.read(),saved);assert.equal(h.requests.length,0);
 });
 
 test('Holiday requests wait for approval; cancel, stale replies and missing bridge use no network',async()=>{
