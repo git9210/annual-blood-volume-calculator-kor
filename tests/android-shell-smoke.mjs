@@ -1,0 +1,147 @@
+import * as licenses from '../assets/licenses.mjs';
+import * as backupCrypto from '../assets/backup-crypto.mjs';
+// Logic smoke check with a minimal DOM stub; this does not render or verify CSS.
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+import * as engine from '../assets/engine.mjs';
+import * as calendar from '../assets/calendar-view.mjs';
+import {createHolidayStore as holidayStore} from '../assets/holidays.mjs';
+const root=new URL('../assets/',import.meta.url).pathname;
+const node=()=>({innerHTML:'',textContent:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},removeEventListener(){},setAttribute(){},querySelectorAll(){return[]},focus(){},showModal(){this.open=true},close(){this.open=false}});
+const elements=new Map([...readFileSync(root+'index.html','utf8').matchAll(/id="([^"]+)"/g)].map(m=>['#'+m[1],node()]));
+for(const key of ['.calendar-scroll','#holiday-status','[data-action="refresh-holidays"]','#confirm-quick-plan'])elements.set(key,node());
+const events={},app=elements.get('#app');app.addEventListener=(type,fn)=>events['app:'+type]=fn;
+const cache=new Map(),storage={getItem:k=>cache.get(k)||null,setItem:(k,v)=>cache.set(k,v)};
+let mediaChange,requests=0;
+const media={matches:true,addEventListener:(type,fn)=>mediaChange=fn};
+const document={querySelector:s=>elements.get(s)||null,querySelectorAll:()=>[],addEventListener:(type,fn,capture)=>events[type+(capture?':capture':'')]=fn};
+const window={localStorage:storage,matchMedia:()=>media,addEventListener(){},scrollTo(){}};
+const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+vm.runInContext(readFileSync(root+'app.mjs','utf8').replace(/^import .*;\n/gm,''),context);
+const click=data=>{const b={dataset:data,disabled:false,getBoundingClientRect:()=>({top:600})};events.click({preventDefault(){},target:{closest:sel=>sel==='[data-page]'?(data.page?b:null):(data.action?b:null)}})};
+const read=()=>JSON.parse(storage.getItem('blood-note-v1'));
+const days=()=>[...app.innerHTML.matchAll(/data-calendar-date="([^"]+)"/g)].map(m=>m[1]);
+assert.equal(read().records.length,0);
+const original=storage.getItem('blood-note-v1');
+click({page:'planner'});
+assert.match(app.innerHTML,/data-view="month"/);
+assert.doesNotMatch(app.innerHTML,/calendar-view-switch|data-view="week"/);
+assert.equal((app.innerHTML.match(/class="day-status /g)||[]).length,days().length*4);
+const initial=days()[0],next=calendar.calendarWindow(initial,'month').next;
+click({action:'calendar-next'});assert.equal(days()[0],next);
+click({action:'calendar-prev'});assert.equal(days()[0],initial);
+assert.equal(storage.getItem('blood-note-v1'),original);
+const future=engine.addDays(engine.today(),14);
+events['app:change']({target:{id:'sim-date',value:future,dataset:{}}});
+assert.ok(days().includes(future));
+click({action:'day',date:future});
+assert.match(elements.get('#dialog-content').innerHTML,/헌혈 방식을 선택해 주세요/);
+click({action:'day-type',type:'plasma'});assert.equal(read().plans.length,0);
+click({action:'day-confirm'});
+assert.equal(read().plans.length,1);assert.equal(read().plans[0].date,future);assert.equal(read().records.length,0);
+click({page:'records'});assert.equal((app.innerHTML.match(/class="record-date"/g)||[]).length,0);
+click({page:'settings'});assert.match(app.innerHTML,/안드로이드 2.0.3/);assert.match(app.innerHTML,/data-action="demo"/);
+assert.equal(requests,0);
+console.log('PASS: monthly calendar, date popup, confirm-once plan creation, records/settings, zero holiday requests. CSS is not rendered in this check.');
+
+click({page:'planner'});
+for(const action of ['calendar-prev','month-today','calendar-next'])assert.equal((app.innerHTML.match(new RegExp('data-action="'+action+'"','g'))||[]).length,2);
+let buttonTop=800,focusOptions;
+const replacement={disabled:false,getBoundingClientRect:()=>({top:buttonTop}),focus:options=>focusOptions=options};
+for(const action of ['calendar-prev','month-today','calendar-next'])elements.set('[data-calendar-nav="bottom"] [data-action="'+action+'"]',replacement);
+window.scrollY=1000;window.scrollX=0;window.scrollTo=options=>window.scrollY=options.top;
+const beforeMonth=days()[0];
+click({action:'calendar-next',calendarPosition:'bottom'});
+assert.equal(days()[0],calendar.calendarWindow(beforeMonth,'month').next);assert.equal(window.scrollY,1200);assert.equal(focusOptions.preventScroll,true);
+window.scrollY=1000;buttonTop=400;
+click({action:'calendar-prev',calendarPosition:'bottom'});
+assert.equal(days()[0],beforeMonth);assert.equal(window.scrollY,800);
+events['app:change']({target:{id:'sim-date',value:'2026-10-18',dataset:{}}});
+const stored=storage.getItem('blood-note-v1');
+click({action:'calendar-next',calendarPosition:'bottom'});
+assert.equal(days()[0],'2026-11-01');assert.equal(days().length,30);
+click({action:'month-today',calendarPosition:'bottom'});
+assert.ok(days().includes(engine.today()));assert.equal(storage.getItem('blood-note-v1'),stored);assert.equal(requests,0);
+console.log('PASS: upper/lower controls, lower month paging, today button, scroll correction for taller/shorter calendars, focus preservation. No real browser rendering was performed.');
+
+// Encrypted backup crosses the bridge only after password confirmation.
+const saves=[],backupButton={disabled:false};
+const passwordForm={elements:{password:{value:''},confirm:{value:''}},querySelector:()=>backupButton,
+  reset(){this.elements.password.value='';this.elements.confirm.value='';},addEventListener:(event,fn)=>events['backup:'+event]=fn};
+elements.set('#backup-password-form',passwordForm);elements.set('#backup-password-status',node());
+window.BloodNoteAndroid={saveText:(name,mime,data)=>saves.push({name,mime,data}),openLink:url=>saves.push({url})};
+vm.runInContext('exportBackup()',context);
+assert.equal(saves.length,0);
+passwordForm.elements.password.value=passwordForm.elements.confirm.value='a-long-test-password';
+await events['backup:submit']({preventDefault(){}});
+assert.equal(saves.length,1);assert.equal(saves[0].mime,'application/json');
+const encrypted=JSON.parse(saves[0].data);
+assert.equal(encrypted.format,'blood-note-encrypted-backup');
+assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(encrypted,'a-long-test-password')),read());
+assert.match(elements.get('#toast').innerHTML,/저장할 위치/);
+assert.doesNotMatch(elements.get('#toast').innerHTML,/저장했습니다/);
+assert.equal(requests,0);
+let prevented=false;
+events['click:capture']({target:{closest:()=>({href:'https://emi.bloodinfo.net/emi4.do?lang=ko'})},preventDefault(){prevented=true}});
+assert.equal(prevented,true);
+assert.match(saves[1].url,/^https:\/\/emi\.bloodinfo\.net/);
+// Restore a valid backup using the same file.text() interface as the native picker.
+for(const key of ['#backup-current','#confirm-restore'])elements.set(key,node());
+const backup=read();backup.plans=[];backup.records=[{id:'restored-sample',date:engine.addDays(engine.today(),-30),type:'plasma'}];backup.appliedImports=['legacy-import-receipt'];
+context.backupFile={size:1000,text:async()=>JSON.stringify(backup)};
+await vm.runInContext('restoreBackup(backupFile)',context);
+assert.match(elements.get('#dialog-content').innerHTML,/백업을 복원할까요/);
+elements.get('#confirm-restore').onclick();
+assert.equal(read().plans.length,0);assert.equal(read().records.length,1);
+const valid=storage.getItem('blood-note-v1');
+context.backupFile={size:5000001,text:async()=>{throw Error('must not read oversized file')}};
+await vm.runInContext('restoreBackup(backupFile)',context);
+assert.equal(storage.getItem('blood-note-v1'),valid);
+context.backupFile={size:8,text:async()=>'{broken'};
+await vm.runInContext('restoreBackup(backupFile)',context);
+assert.equal(storage.getItem('blood-note-v1'),valid);
+assert.match(elements.get('#toast').innerHTML,/복원하지 못했습니다/);
+assert.equal(requests,0);
+console.log('PASS: password-encrypted backup export, external-link routing, confirmed restore, oversized/corrupt backup preservation, zero automatic holiday requests. Native file dialogs require device testing.');
+
+// Relaunch uses the restored state; importing or restarting never seeds records.
+const saved=storage.getItem('blood-note-v1');
+const reloaded=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+vm.runInContext(readFileSync(root+'app.mjs','utf8').replace(/^import .*;\n/gm,''),reloaded);
+assert.equal(storage.getItem('blood-note-v1'),saved);
+assert.equal(read().records.length,1);
+assert.equal(requests,0);
+console.log('PASS: clean install starts with zero records/plans; restored records survive relaunch without seeding or clearing.');
+
+// A real anchor exposes an absolute .href even when its attribute is just #dashboard.
+// Capture must not hand that local URL to the Android external-link bridge.
+const nativeLinks=[];let exitHintCancels=0;
+window.BloodNoteAndroid={openLink:url=>nativeLinks.push(url),cancelExitHint:()=>exitHintCancels++};
+const brand={dataset:{page:'dashboard'},href:'https://appassets.androidplatform.net/assets/index.html#dashboard'};
+assert.match(readFileSync(root+'index.html','utf8'),/class="brand"[^>]*data-page="dashboard"/);
+for(const from of ['planner','records','settings','dashboard']){
+  vm.runInContext(`setPage('${from}')`,reloaded);
+  window.scrollY=600;
+  let prevented=false;
+  const event={target:{closest:selector=>['a[href]','[data-page]'].includes(selector)?brand:null},preventDefault(){prevented=true}};
+  events['click:capture'](event);events.click(event);
+  assert.equal(nativeLinks.length,0);assert.equal(prevented,true);
+  assert.equal(vm.runInContext('page',reloaded),'dashboard');
+  assert.equal(vm.runInContext('location.hash',reloaded),'dashboard');
+  assert.equal(window.scrollY,0);
+}
+assert.equal(exitHintCancels,4);
+events['click:capture']({target:{closest:()=>null}});
+assert.equal(exitHintCancels,5);
+const localPlain={href:'https://appassets.androidplatform.net/assets/index.html#records'};
+events['click:capture']({target:{closest:()=>localPlain},preventDefault(){throw Error('Local anchor intercepted')}});
+assert.equal(nativeLinks.length,0);
+events['click:capture']({target:{closest:()=>({href:'https://github.com/hyunbinseo/holidays-kr'})},preventDefault(){}});
+assert.equal(nativeLinks.length,1);
+vm.runInContext("setPage('settings');toggleDemo()",reloaded);
+assert.equal(vm.runInContext('location.hash',reloaded),'dashboard');
+vm.runInContext('toggleDemo()',reloaded);
+assert.equal(storage.getItem('blood-note-v1'),saved);
+console.log('PASS: logo from all screens returns home and scrolls up; local hash links never open externally; external links still work; demo back routing is synchronized.');

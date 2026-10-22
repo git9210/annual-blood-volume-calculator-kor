@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#184d44"><meta name="description" content="헌혈 기록과 직전 1년 계산량, 앞으로의 헌혈 계획을 한눈에 확인하세요.">
+  <title>연간채혈량 계산기</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css?v=203-date-popup">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard" data-page="dashboard" aria-label="연간채혈량 계산기 · 한눈에 보기"><img src="./icon.svg" alt=""><span>연간채혈량 계산기<small>나의 다음 나눔</small></span></a>
+      <nav aria-label="주 메뉴">
+        <button data-page="dashboard"><span aria-hidden="true">◉</span>한눈에 보기</button>
+        <button data-page="planner"><span aria-hidden="true">▦</span>일정 시뮬레이터</button>
+        <button data-page="records"><span aria-hidden="true">≡</span>헌혈 기록</button>
+      </nav>
+      <div class="side-bottom"><span class="status-dot"></span> 이 기기에 자동 저장<small>다른 기기로 옮길 때는 백업을 이용하세요.</small><button id="install" class="quiet">앱 정보 · 기록 옮기기</button></div>
+    </aside>
+    <div class="body-wrap">
+      <header class="topbar"><strong id="date-label"></strong><div><button id="quick-add" class="primary small">+ 기록 추가</button><button type="button" id="settings-toggle" class="settings-toggle" data-page="settings" aria-label="설정·백업" title="설정·백업"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="19.038,9.713 21.284,10.530 21.284,13.470 19.038,14.287 18.593,15.360 19.605,17.525 17.525,19.605 15.360,18.593 14.287,19.038 13.470,21.284 10.530,21.284 9.713,19.038 8.640,18.593 6.475,19.605 4.395,17.525 5.407,15.360 4.962,14.287 2.716,13.470 2.716,10.530 4.962,9.713 5.407,8.640 4.395,6.475 6.475,4.395 8.640,5.407 9.713,4.962 10.530,2.716 13.470,2.716 14.287,4.962 15.360,5.407 17.525,4.395 19.605,6.475 18.593,8.640"></polygon><circle cx="12" cy="12" r="3.1"></circle></svg></button></div></header>
+      <div id="demo-banner" class="demo-banner" hidden>예시 데이터로 체험 중입니다. 실제 헌혈 내역이 아닙니다.<button id="exit-demo">내 기록으로 돌아가기</button></div>
+      <div id="storage-warning" class="notice warning" hidden></div>
+      <main id="app" tabindex="-1"></main>
+      <footer>일정 계산을 돕는 개인용 도구입니다. 실제 헌혈 가능 여부는 헌혈기관의 문진과 검사로 결정됩니다.</footer>
+    </div>
+  </div>
+  <dialog id="dialog"><div id="dialog-content"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.mjs?v=203-date-popup"></script>
+  <noscript>Android System WebView를 업데이트한 뒤 앱을 다시 열어 주세요.</noscript>
+</body>
+</html>
