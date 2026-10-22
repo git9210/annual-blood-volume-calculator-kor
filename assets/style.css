@@ -409,3 +409,44 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 }
 @media(max-height:520px){dialog.calendar-date-dialog{max-height:calc(100dvh - 20px);padding-top:18px}.date-popup-head{padding-bottom:14px}.date-popup-choice{min-height:82px}}
 @media(prefers-reduced-motion:reduce){.date-popup-choice{transition:none}}
+
+/* Completed donations stay distinct from ordinary past days, including on holidays. */
+.calendar-card .calendar-month .day.recorded.highlighted-record{background:#e5f0fb;border-color:#729bc1;box-shadow:inset 0 0 0 1px #729bc130}
+.calendar-card .calendar-month .day.recorded.highlighted-record.selected,.calendar-card .calendar-month .day.recorded.highlighted-record.today{outline:2px solid var(--green);outline-offset:-2px}
+.calendar-card .calendar-month .day.recorded.highlighted-record .day-number{display:inline-flex;align-items:center;gap:2px}
+.day-recorded-mark{display:inline-grid;place-items:center;flex:0 0 auto;width:12px;height:12px;border-radius:50%;background:#285f8d;color:#fff;font:800 9px/1 sans-serif}
+.calendar-card .calendar-month .day.recorded.highlighted-record .day-flag{background:#285f8d;color:#fff}
+.calendar-card .calendar-month .day.recorded.highlighted-record .record-status{background:#f3f7fc;border-color:#d6e3ef;color:#566c80}
+.calendar-card .calendar-month .day.recorded.highlighted-record .completed-record{background:#285f8d;border-color:#285f8d;color:#fff}
+.calendar-card .calendar-month .day.recorded.highlighted-record .completed-record strong{color:#fff;font-weight:800}
+.legend i.done{display:inline-grid;place-items:center;width:12px;height:12px;background:#285f8d;color:#fff;font-size:9px;font-weight:800;vertical-align:middle}
+@container(max-width:520px){.calendar-card .day-recorded-mark{width:10px;height:10px;font-size:8px}}
+
+/* The range describes volume only, not eligibility after interval/count checks. */
+.balance-card.balance-low{background:#853448}
+.balance-card.balance-plasma{background:#7c511d}
+.balance-card.balance-component{background:#21557d}
+.balance-card.balance-plain,.balance-card.balance-whole{background:#184d44}
+.balance-card.balance-empty{background:#52675e}
+.balance-card .balance-title,.balance-card .balance-number span,.balance-card p,.balance-card .track-labels,.balance-card .balance-note{color:#ffffffe0}
+.balance-card .badge{color:#fff;background:#ffffff20}
+.balance-status{margin-top:18px}
+.balance-status p{font-size:12px;line-height:1.7;margin-top:0;word-break:keep-all;overflow-wrap:anywhere}
+.balance-status small{display:block;color:#ffffffcf;font-size:10px;line-height:1.7;margin-top:3px;word-break:keep-all}
+.balance-low .track>span,.balance-plasma .track>span,.balance-component .track>span{background:#ffffffb8}
+.start-page-card{margin-bottom:22px}
+.start-page-card select{margin-top:7px;max-width:420px}
+.start-page-card .settings-note{margin-top:10px}
+.display-options-card{margin-bottom:22px}
+.display-toggle{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:76px;padding:15px 0;cursor:pointer}
+.display-toggle+.display-toggle{border-top:1px solid var(--line)}
+.display-toggle-copy{min-width:0}
+.display-toggle-copy strong{display:block;font-size:14px;line-height:1.5}
+.display-toggle-copy small{display:block;font-size:11px;font-weight:400;line-height:1.7;margin-top:4px;word-break:keep-all;overflow-wrap:anywhere}
+.display-toggle-control{display:flex;align-items:center;gap:7px;flex-shrink:0;color:var(--muted);font-size:11px}
+.display-toggle input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;width:46px;height:28px;min-height:28px;margin:0;padding:0;border:1px solid #9ba99e;border-radius:16px;background:#cbd3cb;cursor:pointer}
+.display-toggle input[type=checkbox]::before{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #183c3326}
+.display-toggle input[type=checkbox]:checked{background:var(--green);border-color:var(--green)}
+.display-toggle input[type=checkbox]:checked::before{transform:translateX(18px)}
+.display-toggle input[type=checkbox]:disabled{opacity:.5;cursor:not-allowed}
+.display-options-card>.settings-note{margin-top:10px}

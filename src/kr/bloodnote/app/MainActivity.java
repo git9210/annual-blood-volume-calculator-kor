@@ -371,7 +371,7 @@ public final class MainActivity extends Activity {
         // Honor a second back at the time it happens, before a WebView callback can be delayed.
         if (exitToastVisible) { backFromHome(); return; }
         if (web == null) { backFromHome(); return; }
-        web.evaluateJavascript("(()=>{const dialog=document.querySelector('dialog[open]');if(dialog){dialog.close();return true;}if(location.hash&&location.hash!=='#dashboard'){location.hash='dashboard';window.scrollTo(0,0);return true;}return false;})()",
+        web.evaluateJavascript("(()=>{if(window.bloodNoteHandleBack)return window.bloodNoteHandleBack();const dialog=document.querySelector('dialog[open]');if(dialog){dialog.close();return true;}return false;})()",
             handled -> { if ("true".equals(handled)) resetExitHint(); else backFromHome(); });
     }
 

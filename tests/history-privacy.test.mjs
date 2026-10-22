@@ -15,7 +15,7 @@ const assets=new URL('../assets/',import.meta.url);
 const source=readFileSync(new URL('app.mjs',assets),'utf8').replace(/^import .*;\n/gm,'');
 const fixture=count=>({version:1,rules:engine.clone(engine.DEFAULT_RULES),complete:true,plans:[],appliedImports:['kept-receipt'],
   records:Array.from({length:count},(_,i)=>({id:'record-'+i,date:engine.addDays('2020-01-01',i),type:['whole','mixed','plasma'][i%3]}))});
-function harness(count=201,{savedState,date='2026-10-18'}={}){
+function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
   const initial=savedState??fixture(count),events={},elements=new Map(),prompts=[],finished=[],requests=[],exports=[],timers=new Map();let timerId=0,currentDate=date;
   let networkFailure=false,release=null;
   const node=key=>({innerHTML:'',textContent:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},
@@ -35,17 +35,18 @@ function harness(count=201,{savedState,date='2026-10-18'}={}){
     createHolidayStore:opts=>createHolidayStore({...opts,fetcher:async(url,options)=>{
       requests.push({url,options});await new Promise(resolve=>release=resolve);
       if(networkFailure)throw Error('offline');return {ok:true,text:async()=>JSON.stringify(payload)};
-    }}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#records',href:'https://appassets.androidplatform.net/assets/index.html#records',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,
+    }}),window,document,localStorage:storage,navigator:{},URL,location:{hash,href:'https://appassets.androidplatform.net/assets/index.html'+hash,origin:'https://appassets.androidplatform.net'},crypto:webcrypto,
     setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
   vm.runInContext(source,context);
   const run=code=>vm.runInContext(code,context);
   return {initial,events,elements,prompts,finished,requests,exports,window,run,storage,timers,
     setToday:value=>{currentDate=value;run('refreshLocalDay()');},
-    relaunch:()=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate}),
+    relaunch:(hash='')=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate,hash}),
     html:()=>elements.get('#app').innerHTML,read:()=>JSON.parse(storage.getItem('blood-note-v1')),
     ids:()=>[...elements.get('#app').innerHTML.matchAll(/data-action="edit-record" data-id="([^"]+)"/g)].map(match=>match[1]),
     click:(action,data={})=>{const button={dataset:{action,...data},disabled:false};events['document:click']({target:{closest:selector=>selector==='[data-action]'?button:null},preventDefault(){}});},
     change:(id,value)=>events['#app:change']({target:{id,value,dataset:{}}}),
+    display:(key,checked)=>events['#app:change']({target:{id:'display-'+key,checked,dataset:{displayOption:key}}}),
     password:async(value,confirm=value)=>{form.elements.password.value=value;form.elements.confirm.value=confirm;await events['#backup-password-form:submit']({preventDefault(){}});},
     consent:(allowed,id=prompts.at(-1))=>window.bloodNoteHolidayConsent(id,allowed),
     release:async(fail=false)=>{networkFailure=fail;release();await new Promise(resolve=>setImmediate(resolve));}
@@ -182,7 +183,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.0.3/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.1.1/);
   assert.equal(h.requests.length,0);
 });
 
@@ -278,4 +279,156 @@ test('Calendar always shows one compact month, with seven headings and four stat
   h.click('day',{date:'2026-11-01'});assert.equal(h.elements.get('#dialog').open,true);
   assert.match(h.elements.get('#dialog-content').innerHTML,/헌혈 방식을 선택해 주세요/);
   h.click('close-dialog');assert.equal(h.storage.getItem('blood-note-v1'),before);assert.equal(h.requests.length,0);
+});
+
+test('Every start-page choice survives a cold launch, navigation and record edits without changing history',()=>{
+  const h=harness(7,{hash:''}),initial=h.read();assert.equal(h.run('page'),'dashboard');
+  for(const page of ['planner','records','dashboard']){
+    h.click('settings');h.change('start-page',page);
+    assert.equal(h.run('page'),'settings');assert.equal(h.read().startPage,page);
+    assert.deepEqual({...h.read(),startPage:undefined},{...initial,startPage:undefined});
+    assert.match(h.html(),new RegExp(`<option value="${page}" selected>`));
+    h.click('dashboard');h.click('records');
+    h.click('delete-record',{id:'record-0'});h.run('undoAction()');
+    const reopened=h.relaunch();assert.equal(reopened.run('page'),page);
+    assert.deepEqual(reopened.read(),h.read());assert.equal(reopened.requests.length,0);
+    assert.equal(h.relaunch('#settings').run('page'),'settings');
+  }
+  assert.equal(h.requests.length,0);
+});
+
+test('Missing, invalid and failed start-page preferences preserve records and use a safe fallback',()=>{
+  const initial=fixture(3);
+  for(const startPage of [undefined,null,'invalid','settings','__proto__']){
+    const h=harness(0,{savedState:{...initial,startPage},hash:''});
+    assert.equal(h.run('page'),'dashboard');assert.deepEqual(h.read().records,initial.records);
+    assert.equal(h.run('storageFailed'),false);
+  }
+  const h=harness(3,{hash:''});h.click('settings');h.change('start-page','planner');const saved=h.read();
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};
+  h.change('start-page','records');assert.deepEqual(h.read(),saved);
+  assert.equal(h.run('state.startPage'),'planner');assert.equal(h.relaunch().run('page'),'planner');
+  assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  h.storage.setItem=write;h.change('start-page','invalid');assert.deepEqual(h.read(),saved);
+  h.click('demo');h.change('start-page','records');h.click('demo');assert.deepEqual(h.read(),saved);
+});
+
+test('Start-page preference crosses encrypted backup and restore; pending undo cannot revert a later choice',async()=>{
+  const h=harness(3);h.click('settings');h.change('start-page','planner');
+  h.click('export-backup');await h.password('valid-test-password');
+  const encrypted=h.exports[0].text;
+  const exported=JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password'));
+  assert.equal(exported.startPage,'planner');
+  h.change('start-page','records');h.click('delete-record',{id:'record-0'});
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),exported);assert.equal(h.relaunch().run('page'),'planner');
+  h.click('delete-record',{id:'record-0'});h.click('settings');h.change('start-page','records');
+  assert.equal(h.run('undoAction'),undefined);assert.equal(h.relaunch().run('page'),'records');
+  assert.equal(h.read().records.length,2);assert.equal(h.requests.length,0);
+});
+
+test('Android back closes dialogs, returns to the configured start page, and lets native exit handle that page',()=>{
+  const native=readFileSync(new URL('../src/kr/bloodnote/app/MainActivity.java',import.meta.url),'utf8');
+  const script=native.match(/web\.evaluateJavascript\("([^"\n]*window\.bloodNoteHandleBack[^"\n]*)"/)[1];
+  for(const startPage of ['dashboard','planner','records']){
+    const h=harness(0,{savedState:{...fixture(0),startPage},hash:''});
+    assert.equal(h.run(script),false);
+    h.click('settings');h.elements.get('#dialog').showModal();
+    assert.equal(h.run(script),true);assert.equal(h.elements.get('#dialog').open,false);assert.equal(h.run('page'),'settings');
+    assert.equal(h.run(script),true);assert.equal(h.run('page'),startPage);
+    assert.equal(h.run(script),false);assert.equal(h.requests.length,0);
+    h.click('dashboard');assert.equal(h.run('page'),'dashboard');
+    assert.equal(h.read().startPage,startPage);
+  }
+});
+
+test('Balance colors and text switch at 45, 90 and 430 mL; zero/negative balance is low and no-history is neutral',()=>{
+  for(const [remaining,tone] of [[-1,'low'],[0,'low'],[44,'low'],[45,'plasma'],[89,'plasma'],[90,'component'],[429,'component'],[430,'whole'],[2160,'whole']]){
+    const initial={...fixture(0),rules:{...engine.clone(engine.DEFAULT_RULES),cap:45+remaining},records:[{id:'test',date:'2026-09-01',type:'plasma'}]};
+    const h=harness(0,{savedState:initial,hash:''});
+    assert.match(h.html(),new RegExp(`balance-card balance-${tone}`));assert.doesNotMatch(h.html(),/balance-band-label|mL 구간/);
+    assert.match(h.html(),/계산량 기준 · 간격·횟수 조건은 별도로 확인/);
+    assert.deepEqual(h.read(),initial);assert.equal(h.requests.length,0);
+  }
+  const empty=harness(0,{hash:''});assert.match(empty.html(),/balance-card balance-empty/);
+  assert.match(empty.html(),/balance-number">—/);assert.doesNotMatch(empty.html(),/balance-band-label/);
+});
+
+test('Volume text respects custom calculation settings and never treats volume alone as donation eligibility',()=>{
+  const initial={...fixture(0),rules:{...engine.clone(engine.DEFAULT_RULES),cap:169,volumes:{whole:500,plasma:50,platelet:100,mixed:120}},records:[{id:'today',date:'2026-10-18',type:'plasma'}]};
+  const h=harness(0,{savedState:initial,hash:''});
+  assert.match(h.html(),/balance-card balance-component/);assert.match(h.html(),/계산량 충족: 혈장 · 혈소판<\/p>/);
+  assert.match(h.html(),/간격·횟수 조건은 별도로/);assert.doesNotMatch(h.html(),/오늘부터 계산 조건 충족/);
+  h.run('state.rules.cap=170;render()');assert.doesNotMatch(h.html(),/balance-band-label|mL 구간/);
+  assert.match(h.html(),/계산량 충족: 혈장 · 혈소판 · 혈소판 혈장/);
+  assert.deepEqual(h.read(),initial);assert.equal(h.requests.length,0);
+});
+
+test('The two display switches are independent and never change calculations, actual records or plans',()=>{
+  const initial={...fixture(0),rules:{...engine.clone(engine.DEFAULT_RULES),cap:270},
+    records:[{id:'holiday',date:'2026-10-03',type:'plasma'},{id:'recent',date:'2026-10-08',type:'mixed'}],
+    plans:[{id:'future',date:'2026-10-30',type:'plasma'}],startPage:'planner'};
+  const h=harness(0,{savedState:initial,hash:''});
+  const baseline=h.run('JSON.stringify(stats(state.records,today(),state.rules))');
+  for(const [balance,record] of [[true,true],[false,true],[false,false],[true,false],[true,true]]){
+    h.click('settings');h.display('balanceHighlight',balance);h.display('recordHighlight',record);
+    for(const [key,enabled] of [['balanceHighlight',balance],['recordHighlight',record]]){
+      const input=h.html().match(new RegExp(`<input[^>]*id="display-${key}"[^>]*>`))[0];
+      assert.match(input,/role="switch"/);assert.equal(/\bchecked\b/.test(input),enabled);
+    }
+    h.click('dashboard');assert.match(h.html(),/135<span>mL/);
+    assert.match(h.html(),new RegExp('balance-card balance-'+(balance?'component':'plain')));
+    assert.equal(h.html().includes('class="balance-status"'),balance);
+    assert.doesNotMatch(h.html(),/balance-band-label|90~429mL 구간/);
+    h.click('planner');
+    const actual=h.html().match(/data-calendar-date="2026-10-03"[\s\S]*?<\/button>/)[0];
+    const plan=h.html().match(/data-calendar-date="2026-10-30"[\s\S]*?<\/button>/)[0];
+    for(const marker of ['highlighted-record','day-recorded-mark','completed-record']){
+      assert.equal(actual.includes(marker),record);assert.equal(plan.includes(marker),false);
+    }
+    assert.match(actual,/개천절/);assert.match(actual,/혈장 완료/);assert.match(actual,/>완료<\/strong>/);
+    assert.equal(h.html().includes('<i class="done"'),record);
+    assert.equal(h.run('JSON.stringify(stats(state.records,today(),state.rules))'),baseline);
+    const {displayOptions,...saved}=h.read();assert.deepEqual(saved,initial);
+  }
+  assert.equal(h.requests.length,0);
+});
+
+test('Disabled display settings survive relaunch, encrypted backup/restore and later record undo',async()=>{
+  const h=harness(4);h.click('settings');h.display('balanceHighlight',false);h.display('recordHighlight',false);
+  h.change('start-page','records');const saved=h.read();
+  let reopened=h.relaunch();assert.deepEqual(reopened.read(),saved);
+  for(const key of ['balanceHighlight','recordHighlight'])assert.equal(reopened.run(`displayEnabled('${key}')`),false);
+  h.click('export-backup');await h.password('valid-test-password');
+  const encrypted=h.exports[0].text;
+  assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),saved);
+  h.display('balanceHighlight',true);h.display('recordHighlight',true);
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.run('undoAction()');assert.deepEqual(h.read(),saved);
+  reopened=h.relaunch();assert.equal(reopened.run('page'),'records');assert.deepEqual(reopened.read(),saved);
+  assert.equal(h.requests.length+reopened.requests.length,0);
+});
+
+test('Legacy display settings default on; invalid values and failed writes cannot corrupt records or preferences',()=>{
+  for(const displayOptions of [undefined,null,[],{balanceHighlight:'false',recordHighlight:0},{unexpected:false}]){
+    const initial={...fixture(2),displayOptions},h=harness(0,{savedState:initial});
+    assert.equal(h.run('storageFailed'),false);
+    assert.equal(h.run("displayEnabled('balanceHighlight')"),true);assert.equal(h.run("displayEnabled('recordHighlight')"),true);
+    assert.deepEqual(h.read().records,initial.records);assert.deepEqual(h.read().plans,initial.plans);
+  }
+  const h=harness(2);h.click('settings');h.display('recordHighlight',false);const saved=h.read();
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.display('balanceHighlight',false);
+  assert.deepEqual(h.read(),saved);assert.equal(h.run("displayEnabled('balanceHighlight')"),true);
+  assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  h.storage.setItem=write;h.display('unrecognized',false);h.display('balanceHighlight','false');assert.deepEqual(h.read(),saved);
+  h.click('demo');assert.equal(h.run("displayEnabled('recordHighlight')"),false);
+  h.click('settings');assert.match(h.html(),/data-display-option="recordHighlight"[^>]*disabled/);
+  h.display('recordHighlight',true);h.click('demo');assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.click('settings');h.display('balanceHighlight',false);
+  assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
+  const reopened=h.relaunch();assert.deepEqual(reopened.read().displayOptions,{recordHighlight:false,balanceHighlight:false});
+  assert.equal(h.requests.length,0);
 });

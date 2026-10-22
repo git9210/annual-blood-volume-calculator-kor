@@ -108,3 +108,24 @@ test('Android back-style dialog close cancels unsaved selection and clears trans
   h.nodes.get('#dialog').close();assert.equal(h.run('dayPopup'),null);h.click('day-confirm');assert.deepEqual(h.read(),before);
   assert.equal(h.requests(),0);
 });
+
+test('Only actual donations get completed-day emphasis; past or due plans do not, and undo restores it',()=>{
+  const records=[{id:'whole',date:'2026-10-01',type:'whole'},{id:'plasma',date:'2026-10-03',type:'plasma'},
+    {id:'platelet',date:'2026-10-08',type:'platelet'},{id:'mixed',date:'2026-10-22',type:'mixed'}];
+  const h=harness({records,plans:[{id:'due',date:'2026-10-20',type:'mixed'},{id:'future',date:'2026-10-30',type:'plasma'}]});
+  const cell=date=>h.app().match(new RegExp(`data-calendar-date="${date}"[\\s\\S]*?<\\/button>`))[0];
+  const saved=h.read();
+  for(const record of records){
+    const html=cell(record.date);assert.match(html,/class="day [^"]* recorded /);
+    assert.match(html,/day-recorded-mark" aria-hidden="true">✓/);
+    assert.match(html,new RegExp(`class="day-status record-status completed-record" data-type="${record.type}"`));
+    assert.equal((html.match(/completed-record/g)||[]).length,1);
+  }
+  assert.match(cell('2026-10-03'),/is-holiday/);assert.match(cell('2026-10-03'),/개천절/);
+  for(const date of ['2026-10-02','2026-10-20','2026-10-30'])assert.doesNotMatch(cell(date),/day-recorded-mark|completed-record| recorded /);
+  assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'platelet'});assert.doesNotMatch(cell('2026-10-08'),/day-recorded-mark|completed-record/);
+  h.run('undoAction()');assert.match(cell('2026-10-08'),/completed-record/);assert.deepEqual(h.read(),saved);
+  h.click('day',{date:'2026-10-20'});h.click('day-complete');assert.match(cell('2026-10-20'),/completed-record/);
+  assert.equal(h.read().records.length,5);assert.equal(h.requests(),0);
+});
