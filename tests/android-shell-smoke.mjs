@@ -42,7 +42,7 @@ click({action:'day-type',type:'plasma'});assert.equal(read().plans.length,0);
 click({action:'day-confirm'});
 assert.equal(read().plans.length,1);assert.equal(read().plans[0].date,future);assert.equal(read().records.length,0);
 click({page:'records'});assert.equal((app.innerHTML.match(/class="record-date"/g)||[]).length,0);
-click({page:'settings'});assert.match(app.innerHTML,/안드로이드 2.3.1/);assert.match(app.innerHTML,/data-action="demo"/);
+click({page:'settings'});assert.match(app.innerHTML,/안드로이드 2.4.0/);assert.match(app.innerHTML,/data-action="demo"/);
 assert.equal(requests,0);
 console.log('PASS: monthly calendar, date popup, confirm-once plan creation, records/settings, zero holiday requests. CSS is not rendered in this check.');
 

@@ -77,6 +77,21 @@ test('Closing a PDF read cancels native work and discards late results without c
   h.ready(payload());assert.deepEqual(h.read(),before);assert.equal(h.run('certificateStage'),null);
   h.click('import-certificate');h.window.bloodNoteCertificateEvent('cancelled',{});assert.deepEqual(h.read(),before);
 });
+
+test('Native PDF password prompts keep JS in read-only review flow and never create a password field or stored value',()=>{
+  const h=harness(),before=h.read();h.click('import-certificate');
+  for(let retry=0;retry<2;retry++){
+    h.window.bloodNoteCertificateEvent('password',{});
+    assert.match(h.elements.get('#certificate-progress-label').textContent,/암호 입력을 기다리고/);
+    assert.doesNotMatch(h.html(),/<input[^>]*type="password"/);
+    assert.equal(h.run('certificateStage.phase'),'reading');assert.deepEqual(h.read(),before);
+    h.window.bloodNoteCertificateEvent('reading',{});
+  }
+  h.ready(payload(1));assert.deepEqual(h.read(),before);h.click('certificate-commit');
+  assert.equal(h.read().records.length,1);assert.doesNotMatch(JSON.stringify(h.read()),/password|생년월일/);
+  h.click('import-certificate');h.window.bloodNoteCertificateEvent('password',{});h.click('close-dialog');
+  const saved=h.read();h.ready(payload(2));assert.deepEqual(h.read(),saved);assert.equal(h.requests(),0);
+});
 test('Corrupt or future-dated PDF results and native failures preserve records and show escaped errors',()=>{
   const h=harness(),before=h.read();h.click('import-certificate');const p=payload(1);p.rows[0].date='2099-01-01';h.ready(p);
   assert.match(h.html(),/날짜 설정을 확인/);assert.match(h.html(),/2099-01-01/);assert.match(h.html(),/2026-10-18/);assert.deepEqual(h.read(),before);

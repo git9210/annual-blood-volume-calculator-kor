@@ -437,6 +437,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        if (certificateImporter != null) certificateImporter.resume();
         if (updater != null) updater.resume();
         if (web != null) {
             web.onResume();
@@ -445,6 +446,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false;
+        if (certificateImporter != null) certificateImporter.pause();
         if (updater != null) updater.pause();
         if (redConnect != null) redConnect.cancelPending();
         completeHolidayConsent(false);

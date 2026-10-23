@@ -461,3 +461,25 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 
 .app-update-card{margin-bottom:22px}
 .app-update-card .settings-note+.settings-note{margin-top:10px}
+
+/* Personal deferral dates are independent of the rolling annual volume. */
+.restriction-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;margin-top:18px;background:#fff7f4;border-color:#e9d8d2;color:#894a40;font-size:14px}
+.restriction-entry span{font-size:23px;line-height:1}.restriction-back{margin-top:-13px;margin-bottom:15px;min-height:40px}
+.restriction-stepper{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:12px;align-items:center;margin-top:-12px}
+.restriction-stepper>div{display:flex;align-items:center;gap:10px;min-width:0}
+.restriction-stepper input{text-align:center;font-size:22px;font-weight:750;min-width:0}
+.restriction-stepper button{padding:8px;min-height:48px;font-size:22px}
+.restriction-period{padding:20px 16px;border:1px solid #ead7d4;border-radius:15px;background:#fff2ef;text-align:center;color:#8a4940}
+.restriction-period span{display:block;font-size:12px;margin-bottom:7px}
+.restriction-period strong{display:block;font-size:18px;line-height:1.7;word-break:keep-all}
+.restriction-day{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}.restriction-day h3{font-size:13px}
+.restriction-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.restriction-row:last-child{border-bottom:0}.restriction-row>div:first-child{min-width:0;flex:1 1 180px;overflow-wrap:anywhere}
+.restriction-row strong{font-size:13px}.restriction-row p{font-size:12px;color:var(--muted);margin-top:4px}
+.restriction-row .actions{flex:0 0 auto}.restriction-row .actions button{min-height:42px}
+.restriction-list summary{cursor:pointer;font-weight:750;font-size:16px;min-height:28px}.restriction-list summary .badge{margin-left:6px}
+.restriction-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.restriction-notice p{overflow-wrap:anywhere}.restriction-notice .quiet{color:inherit;min-height:44px}
+.calendar-card .calendar-month .day.manually-restricted{border-color:#bd746a;background:#fff3f0}
+.calendar-card .calendar-month .day.manually-restricted .day-flag{background:#8d4a40;color:#fff}
+@media(max-width:359px){.restriction-period strong{font-size:16px}.restriction-stepper{gap:8px}.restriction-entry{font-size:12px}}

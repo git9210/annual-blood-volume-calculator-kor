@@ -131,6 +131,19 @@ test('Encrypted and legacy backups restore records while previous date preferenc
   assert.deepEqual(h.read().records,legacy.records);assert.equal(h.requests.length,0);
 });
 
+test('Restriction reasons/dates survive encrypted export, restoration and relaunch with existing settings and records',async()=>{
+  const saved={...fixture(4),startPage:'planner',displayOptions:{redConnectCalendar:false,balanceHighlight:false},restrictions:[{id:'restriction',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}]};
+  const h=harness(0,{savedState:saved});h.click('export-backup');await h.password('valid-test-password');
+  const encrypted=h.exports[0].text;assert.doesNotMatch(encrypted,/약 복용|2026-10-23/);
+  assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),saved);
+  h.run('change(()=>{state.restrictions=[];})');assert.deepEqual(h.read().restrictions,[]);
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await h.password('valid-test-password');assert.match(h.elements.get('#dialog-content').innerHTML,/헌혈 제한 기간 <strong>1건/);
+  h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),saved);assert.deepEqual(h.relaunch().read(),saved);
+  h.click('demo');h.run("change(()=>{state.restrictions=[{id:'demo',start:'2026-10-01',end:'2026-10-02',reason:''}];})");
+  assert.deepEqual(h.read(),saved);h.click('demo');assert.deepEqual(h.read(),saved);assert.equal(h.requests.length,0);
+});
+
 test('201 records are reachable once across 41 pages of five; paging and filtering never change saved history',()=>{
   const h=harness(),seen=[];
   assert.match(h.html(),/1 \/ 41 페이지/);
@@ -183,7 +196,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.3.1/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.4.0/);
   assert.equal(h.requests.length,0);
 });
 
@@ -194,7 +207,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v2.3.1/);
+  assert.match(h.html(),/현재 v2.4.0/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);

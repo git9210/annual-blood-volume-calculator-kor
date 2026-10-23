@@ -1,0 +1,29 @@
+# Private signing material must never be committed.
+/signing/
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+password.txt
+.env
+.env.*
+# Local builds, SDKs and caches
+/build/
+/android-tools/
+/build-info.json
+*.apk
+*.idsig
+*.aab
+*.class
+*.jar
+__pycache__/
+*.pyc
+# Personal documents/backups and local editor state
+/upload/
+/backups/
+*.pdf
+blood-note-backup-*.json
+.idea/
+.vscode/
+.DS_Store

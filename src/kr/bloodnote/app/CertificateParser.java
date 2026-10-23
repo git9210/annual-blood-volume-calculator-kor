@@ -12,6 +12,10 @@ import java.util.regex.Pattern;
 
 /** Strict reader for the Red Cross personal donation certificate, not a PDF engine. */
 public final class CertificateParser {
+    /** Only these app-authored messages are safe to send back to the UI. */
+    static final class FormatException extends IllegalArgumentException {
+        FormatException(String message) { super(message); }
+    }
     public static final int MAX_PAGES = 300, MAX_ROWS = 3000, MAX_PAGE_CHARS = 100000;
     private static final Pattern PAGE = Pattern.compile("(?<![0-9/])(\\d{1,3})\\s*/\\s*(\\d{1,3})(?![0-9/])");
     private static final Pattern TOTAL = Pattern.compile("헌\\s*혈\\s*횟\\s*수\\s*(\\d{1,4})(?!\\d)");
@@ -30,12 +34,12 @@ public final class CertificateParser {
     // Certificate numbers are transient consistency checks; never returned or stored.
     private final Set<String> certificates = new HashSet<>();
     public CertificateParser(int pageCount) {
-        if (pageCount < 1 || pageCount > MAX_PAGES) throw new IllegalArgumentException("1~300쪽의 증명서 PDF를 선택해 주세요.");
+        if (pageCount < 1 || pageCount > MAX_PAGES) throw new FormatException("1~300쪽의 증명서 PDF를 선택해 주세요.");
         this.pageCount = pageCount;
     }
     public void accept(String source, int pageNumber) {
         if (source == null || source.length() > MAX_PAGE_CHARS) fail(pageNumber, "한 쪽의 내용이 너무 많습니다.");
-        if (pageNumber != processed + 1 || pageNumber > pageCount) throw new IllegalArgumentException("PDF 쪽 순서를 확인하지 못했습니다.");
+        if (pageNumber != processed + 1 || pageNumber > pageCount) throw new FormatException("PDF 쪽 순서를 확인하지 못했습니다.");
         String text = Normalizer.normalize(source, Normalizer.Form.NFKC)
             .replace('\u00a0', ' ').replace('\u200b', ' ').replace('\u2010', '-').replace('\u2011', '-').replace('\u2013', '-');
         String compact = text.replaceAll("\\s+", "");
@@ -92,7 +96,7 @@ public final class CertificateParser {
     }
     public List<Row> finish() {
         if (processed != pageCount || rows.size() != expected)
-            throw new IllegalArgumentException("증명서의 " + Math.max(0, expected) + "건 중 " + rows.size() + "건을 읽었습니다. 누락을 막기 위해 등록하지 않았습니다. 원본 전체 PDF를 확인해 주세요.");
+            throw new FormatException("증명서의 " + Math.max(0, expected) + "건 중 " + rows.size() + "건을 읽었습니다. 누락을 막기 위해 등록하지 않았습니다. 원본 전체 PDF를 확인해 주세요.");
         return new ArrayList<>(rows);
     }
     public String finishJson() {
@@ -107,5 +111,5 @@ public final class CertificateParser {
         }
         return out.append("]}").toString();
     }
-    private static void fail(int page, String reason) { throw new IllegalArgumentException(page + "쪽: " + reason); }
+    private static void fail(int page, String reason) { throw new FormatException(page + "쪽: " + reason); }
 }

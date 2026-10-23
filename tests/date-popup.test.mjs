@@ -6,11 +6,66 @@ import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
 import * as licenses from '../assets/licenses.mjs';
+
+test('Restriction editor replaces the date popup, keeps only the date range card and preserves an unsaved choice',()=>{
+  const h=harness(),before=h.read();
+  h.click('day',{date:'2026-10-23'});h.click('day-type',{type:'plasma'});h.click('restriction-new');
+  assert.match(h.html(),/헌혈 제한 설정/);assert.match(h.html(),/제한 적용 기간/);
+  assert.doesNotMatch(h.html(),/14일간 모든 헌혈 제한|기존 조건 재계산|제한 종료 후 예시/);
+  assert.equal(h.restrictionForm().elements.days.value,'14');
+  assert.equal(h.nodes.get('#restriction-range').textContent,'2026. 10. 23. ~ 2026. 11. 5.');
+  h.click('restriction-more');assert.equal(h.restrictionForm().elements.days.value,'15');
+  h.click('restriction-less');h.restrictionForm({reason:'약 복용'});
+  h.click('restriction-back');assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
+  assert.deepEqual(h.read(),before);
+  h.click('restriction-new');h.restrictionForm({reason:'약 복용'}).onsubmit({preventDefault(){}});
+  const saved=h.read();assert.equal(saved.restrictions.length,1);
+  assert.deepEqual(saved.records,before.records);assert.deepEqual(saved.plans,before.plans);
+  assert.equal(saved.restrictions[0].end,'2026-11-05');assert.match(h.html(),/직접 등록한 헌혈 제한/);
+  assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
+  assert.match(h.app(),/manually-restricted/);assert.match(h.app(),/헌혈 제한 기간/);
+  h.run("setPage('dashboard')");h.today('2026-10-23',true);assert.match(h.app(),/등록한 헌혈 제한이 적용 중/);
+  assert.equal(h.requests(),0);
+});
+test('Restriction edit/delete/undo retain records, plans and settings across a relaunch',()=>{
+  const initial={records:[{id:'done',date:'2026-09-01',type:'whole'}],plans:[{id:'plan',date:'2026-11-01',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}]};
+  const h=harness(initial);h.click('restriction-edit',{id:'pause'});
+  assert.equal(h.restrictionForm().elements.reason.value,'약 복용');
+  h.restrictionForm({days:1,reason:''}).onsubmit({preventDefault(){}});
+  assert.deepEqual(h.read().restrictions,[{id:'pause',start:'2026-10-23',end:'2026-10-23',reason:''}]);
+  assert.match(h.html(),/사유 미입력/);
+  const saved=h.read(),restarted=harness(saved);assert.deepEqual(restarted.read(),saved);
+  restarted.click('restriction-delete',{id:'pause'});assert.deepEqual(restarted.read().restrictions,[]);
+  assert.deepEqual(restarted.read().records,initial.records);assert.deepEqual(restarted.read().plans,initial.plans);
+  restarted.run('undoAction()');assert.deepEqual(restarted.read(),saved);
+  const encrypted=h.run("JSON.stringify(validateState(state))");assert.equal(JSON.parse(encrypted).restrictions[0].id,'pause');
+});
+test('Invalid reasons/durations, failed writes, stale editors and outside taps never partly save a restriction',()=>{
+  const h=harness(),before=h.read();h.click('day',{date:'2026-10-23'});h.click('restriction-new');
+  for(const values of [{reason:'💊'},{reason:'가'.repeat(21)},{reason:'',days:'0'},{days:'1.5'},{days:'1e3'},{days:'3651'},{days:'14',start:'2199-12-31'}]){
+    h.restrictionForm(values).onsubmit({preventDefault(){}});
+    assert.deepEqual(h.read(),before);assert.equal(h.nodes.get('#restriction-feedback').hidden,false);
+  }
+  h.restrictionForm({start:'2026-10-23',days:'14',reason:''});h.fail(true);
+  h.restrictionForm().onsubmit({preventDefault(){}});assert.deepEqual(h.read(),before);
+  h.fail(false);h.restrictionForm().onsubmit({preventDefault(){}});assert.equal(h.read().restrictions.length,1);
+  h.click('restriction-new');h.run("state.restrictions.push({id:'other',start:'2026-12-01',end:'2026-12-01',reason:''})");
+  const saved=h.read();h.restrictionForm().onsubmit({preventDefault(){}});assert.deepEqual(h.read(),saved);
+  assert.match(h.nodes.get('#restriction-feedback').textContent,/바뀌었습니다/);
+  h.pointer('pointerdown');h.pointer('click');assert.equal(h.open(),false);assert.equal(h.run('restrictionEditor'),null);
+  h.run('saveRestriction()');assert.deepEqual(h.read(),saved);assert.equal(h.requests(),0);
+});
+test('A restriction never replaces actual completed markers; conflicts stay editable assumptions',()=>{
+  const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-22',end:'2026-11-05',reason:''}]});
+  h.click('day',{date:'2026-10-22'});assert.match(h.html(),/완료/);assert.match(h.html(),/등록한 헌혈 제한/);
+  h.click('day',{date:'2026-10-23'});h.click('day-type',{type:'plasma'});h.click('day-confirm');
+  assert.equal(h.read().plans.length,1);assert.equal(h.read().records.length,1);assert.match(h.app(),/조정 필요/);
+});
 import * as backupCrypto from '../assets/backup-crypto.mjs';
 import {createHolidayStore} from '../assets/holidays.mjs';
 const root=new URL('../assets/',import.meta.url);
 const source=readFileSync(new URL('app.mjs',root),'utf8').replace(/^import .*;\n/gm,'');
-function harness({records=[],plans=[]}={}){
+function harness({records=[],plans=[],restrictions}={}){
   let date='2026-10-22',requests=0,writes=0,fail=false;
   const events={},nodes=new Map(),cache=new Map();
   const node=key=>({innerHTML:'',textContent:'',dataset:{},style:{},open:false,
@@ -19,9 +74,18 @@ function harness({records=[],plans=[]}={}){
     addEventListener:(type,fn)=>events[key+':'+type]=fn,removeEventListener(){},
     showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const m of readFileSync(new URL('index.html',root),'utf8').matchAll(/id="([^"]+)"/g))nodes.set('#'+m[1],node('#'+m[1]));
-  for(const key of ['#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback'])nodes.set(key,node(key));
+  for(const key of ['#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback','#restriction-form','#restriction-range','#restriction-feedback'])nodes.set(key,node(key));
+  nodes.get('#restriction-form').elements={start:{value:''},reason:{value:''},days:{value:''}};
+  let dialogHTML='';
+  Object.defineProperty(nodes.get('#dialog-content'),'innerHTML',{get:()=>dialogHTML,set:html=>{
+    dialogHTML=html;
+    if(html.includes('id="restriction-form"'))for(const name of ['start','reason','days']){
+      const match=html.match(new RegExp(`name="${name}"[^>]*value="([^"]*)"`));
+      nodes.get('#restriction-form').elements[name].value=(match?.[1]||'').replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&amp;/g,'&');
+    }
+  }});
   const form=nodes.get('#event-form');form.elements={date:{value:'2026-10-01'},type:{value:'plasma'}};
-  cache.set('blood-note-v1',JSON.stringify({version:1,rules:engine.clone(engine.DEFAULT_RULES),records,plans,complete:true,appliedImports:[]}));
+  cache.set('blood-note-v1',JSON.stringify({version:1,rules:engine.clone(engine.DEFAULT_RULES),records,plans,complete:true,appliedImports:[],...(restrictions?{restrictions}:{})}));
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>{if(fail)throw Error('full');cache.set(key,value);writes++;}};
   const document={querySelector:key=>nodes.get(key)||null,querySelectorAll:()=>[],addEventListener:(type,fn,capture)=>events['doc:'+type+(capture?':capture':'')]=fn};
   const window={localStorage:storage,addEventListener(){},scrollTo(){}};
@@ -34,6 +98,7 @@ function harness({records=[],plans=[]}={}){
   return {nodes,click,run:code=>vm.runInContext(code,context),read:()=>JSON.parse(storage.getItem('blood-note-v1')),
     pointer:(event,{x=10,y=100,inside=false,button=0,isPrimary=true}={})=>{let prevented=false,stopped=false;events['#dialog:'+event]?.({target:nodes.get(inside?'#dialog-content':'#dialog'),clientX:x,clientY:y,button,isPrimary,preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});return {prevented,stopped};},
     html:()=>nodes.get('#dialog-content').innerHTML,app:()=>nodes.get('#app').innerHTML,
+    restrictionForm:(values={})=>{const form=nodes.get('#restriction-form');for(const [key,value] of Object.entries(values))form.elements[key].value=String(value);events['#restriction-form:input']?.();return form;},
     open:()=>nodes.get('#dialog').open,requests:()=>requests,writes:()=>writes,fail:value=>fail=value,
     today:(value,refresh=false)=>{date=value;if(refresh)window.bloodNoteRefreshDay();}};
 }
