@@ -12,16 +12,17 @@ test('Restriction editor replaces the date popup, keeps only the date range card
   h.click('day',{date:'2026-10-23'});h.click('day-type',{type:'plasma'});h.click('restriction-new');
   assert.match(h.html(),/헌혈 제한 설정/);assert.match(h.html(),/제한 적용 기간/);
   assert.doesNotMatch(h.html(),/14일간 모든 헌혈 제한|기존 조건 재계산|제한 종료 후 예시/);
-  assert.equal(h.restrictionForm().elements.days.value,'14');
-  assert.equal(h.nodes.get('#restriction-range').textContent,'2026. 10. 23. ~ 2026. 11. 5.');
-  h.click('restriction-more');assert.equal(h.restrictionForm().elements.days.value,'15');
+  assert.equal(h.restrictionForm().elements.days.value,'1');
+  assert.equal(h.nodes.get('#restriction-range').textContent,'2026. 10. 23. ~ 2026. 10. 23.');
+  h.click('restriction-less');assert.equal(h.restrictionForm().elements.days.value,'1');
+  h.click('restriction-more');assert.equal(h.restrictionForm().elements.days.value,'2');
   h.click('restriction-less');h.restrictionForm({reason:'약 복용'});
   h.click('restriction-back');assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
   assert.deepEqual(h.read(),before);
   h.click('restriction-new');h.restrictionForm({reason:'약 복용'}).onsubmit({preventDefault(){}});
   const saved=h.read();assert.equal(saved.restrictions.length,1);
   assert.deepEqual(saved.records,before.records);assert.deepEqual(saved.plans,before.plans);
-  assert.equal(saved.restrictions[0].end,'2026-11-05');assert.match(h.html(),/직접 등록한 헌혈 제한/);
+  assert.equal(saved.restrictions[0].end,'2026-10-23');assert.match(h.html(),/직접 등록한 헌혈 제한/);
   assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
   assert.match(h.app(),/manually-restricted/);assert.match(h.app(),/헌혈 제한 기간/);
   h.run("setPage('dashboard')");h.today('2026-10-23',true);assert.match(h.app(),/등록한 헌혈 제한이 적용 중/);
@@ -31,6 +32,7 @@ test('Restriction edit/delete/undo retain records, plans and settings across a r
   const initial={records:[{id:'done',date:'2026-09-01',type:'whole'}],plans:[{id:'plan',date:'2026-11-01',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}]};
   const h=harness(initial);h.click('restriction-edit',{id:'pause'});
   assert.equal(h.restrictionForm().elements.reason.value,'약 복용');
+  assert.equal(h.restrictionForm().elements.days.value,'14');
   h.restrictionForm({days:1,reason:''}).onsubmit({preventDefault(){}});
   assert.deepEqual(h.read().restrictions,[{id:'pause',start:'2026-10-23',end:'2026-10-23',reason:''}]);
   assert.match(h.html(),/사유 미입력/);
@@ -74,7 +76,7 @@ function harness({records=[],plans=[],restrictions}={}){
     addEventListener:(type,fn)=>events[key+':'+type]=fn,removeEventListener(){},
     showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const m of readFileSync(new URL('index.html',root),'utf8').matchAll(/id="([^"]+)"/g))nodes.set('#'+m[1],node('#'+m[1]));
-  for(const key of ['#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback','#restriction-form','#restriction-range','#restriction-feedback'])nodes.set(key,node(key));
+  for(const key of ['#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback','#restriction-form','#restriction-range','#restriction-feedback','.calendar-scroll'])nodes.set(key,node(key));
   nodes.get('#restriction-form').elements={start:{value:''},reason:{value:''},days:{value:''}};
   let dialogHTML='';
   Object.defineProperty(nodes.get('#dialog-content'),'innerHTML',{get:()=>dialogHTML,set:html=>{
@@ -96,12 +98,65 @@ function harness({records=[],plans=[],restrictions}={}){
   vm.runInContext(source,context);
   const click=(action,data={})=>events['doc:click']({target:{closest:s=>s==='[data-action]'?{dataset:{action,...data},disabled:false}:null},preventDefault(){}});
   return {nodes,click,run:code=>vm.runInContext(code,context),read:()=>JSON.parse(storage.getItem('blood-note-v1')),
+    calendarEvent:(event,values={})=>{
+      let prevented=false,stopped=false;
+      const {inside=true,date='2026-10-23',...props}=values;
+      events['#app:'+event]?.({pointerId:1,pointerType:'touch',isPrimary:true,button:0,clientX:280,clientY:300,timeStamp:0,detail:1,
+        target:{closest:selector=>inside&&selector==='.calendar-scroll'?nodes.get('.calendar-scroll'):null},...props,
+        preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});
+      if(event==='click'&&inside&&!stopped)click('day',{date});
+      return {prevented,stopped};
+    },
     pointer:(event,{x=10,y=100,inside=false,button=0,isPrimary=true}={})=>{let prevented=false,stopped=false;events['#dialog:'+event]?.({target:nodes.get(inside?'#dialog-content':'#dialog'),clientX:x,clientY:y,button,isPrimary,preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});return {prevented,stopped};},
     html:()=>nodes.get('#dialog-content').innerHTML,app:()=>nodes.get('#app').innerHTML,
     restrictionForm:(values={})=>{const form=nodes.get('#restriction-form');for(const [key,value] of Object.entries(values))form.elements[key].value=String(value);events['#restriction-form:input']?.();return form;},
     open:()=>nodes.get('#dialog').open,requests:()=>requests,writes:()=>writes,fail:value=>fail=value,
     today:(value,refresh=false)=>{date=value;if(refresh)window.bloodNoteRefreshDay();}};
 }
+test('Left/right calendar swipes change one month without opening a date or writing data; a fresh tap still opens it',()=>{
+  const h=harness(),before=h.read(),writes=h.writes();
+  h.calendarEvent('pointerdown');h.calendarEvent('pointermove',{clientX:140,clientY:305,timeStamp:80});
+  h.calendarEvent('pointerup',{clientX:80,clientY:310,timeStamp:180});
+  assert.equal(h.run('calendarMonth'),'2026-11');assert.equal(h.open(),false);
+  assert.equal(h.calendarEvent('click',{date:'2026-11-20'}).stopped,true);assert.equal(h.open(),false);
+  h.calendarEvent('pointerdown',{clientX:80});h.calendarEvent('pointerup',{clientX:280,timeStamp:200});
+  assert.equal(h.run('calendarMonth'),'2026-10');
+  // A new contact ends suppression; normal date taps keep their existing action.
+  h.calendarEvent('pointerdown');h.calendarEvent('pointerup',{timeStamp:80});h.calendarEvent('click');
+  assert.equal(h.open(),true);assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
+});
+test('Vertical/diagonal scrolling, short/slow drags, cancelled gestures, mouse and extra fingers never change months',()=>{
+  const cases=[
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointermove',{clientX:285,clientY:360,timeStamp:60});h.calendarEvent('pointerup',{clientX:100,clientY:470,timeStamp:180});},
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointerup',{clientX:200,clientY:370,timeStamp:180});},
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointerup',{clientX:260,timeStamp:100});},
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointerup',{clientX:80,timeStamp:1100});},
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointercancel');h.calendarEvent('pointerup',{clientX:80,timeStamp:180});},
+    h=>{h.calendarEvent('pointerdown',{pointerType:'mouse'});h.calendarEvent('pointerup',{pointerType:'mouse',clientX:80,timeStamp:180});},
+    h=>{h.calendarEvent('pointerdown');h.calendarEvent('pointerdown',{pointerId:2,isPrimary:false});h.calendarEvent('pointerup',{clientX:80,timeStamp:180});},
+    h=>{h.calendarEvent('pointerdown',{inside:false});h.calendarEvent('pointerup',{clientX:80,timeStamp:180});},
+    h=>{h.click('day',{date:'2026-10-23'});h.calendarEvent('pointerdown');h.calendarEvent('pointerup',{clientX:80,timeStamp:180});}
+  ];
+  for(const gesture of cases){const h=harness(),before=h.read();gesture(h);assert.equal(h.run('calendarMonth'),'2026-10');assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);}
+});
+test('Swipes respect year/month boundaries and never swallow keyboard date activation',()=>{
+  const h=harness(),swipe=(start,end)=>{h.calendarEvent('pointerdown',{clientX:start});h.calendarEvent('pointerup',{clientX:end,timeStamp:180});};
+  h.run("moveCalendar('2026-12-01');render()");swipe(280,80);assert.equal(h.run('calendarMonth'),'2027-01');
+  swipe(80,280);assert.equal(h.run('calendarMonth'),'2026-12');
+  h.run("moveCalendar('1900-01-01');render()");swipe(80,280);assert.equal(h.run('calendarMonth'),'1900-01');
+  h.run("moveCalendar('2199-12-01');render()");swipe(280,80);assert.equal(h.run('calendarMonth'),'2199-12');
+  assert.equal(h.calendarEvent('click',{detail:0,date:'2199-12-20'}).stopped,false);assert.equal(h.open(),true);
+});
+test('Restriction dates are marked through both endpoints; their list follows long-term plans and completed donations stay distinct',()=>{
+  const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-24',reason:'약 복용'}]}),before=h.read();
+  const cell=date=>h.app().match(new RegExp(`data-calendar-date="${date}"[\\s\\S]*?<\\/button>`))[0];
+  for(const day of ['20','21','23','24'])assert.match(cell('2026-10-'+day),/manually-restricted/);
+  for(const day of ['19','25'])assert.doesNotMatch(cell('2026-10-'+day),/manually-restricted/);
+  assert.match(cell('2026-10-22'),/highlighted-record/);assert.doesNotMatch(cell('2026-10-22'),/manually-restricted/);
+  assert.ok(h.app().indexOf('나의 장기 계획')<h.app().indexOf('restriction-list'));
+  assert.ok(h.app().indexOf('restriction-list')<h.app().indexOf('앞으로 12개월의 연간 계산량'));
+  assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
+});
 test('Date tap opens four ordered choices and holiday title; selection/cancel never writes records or plans',()=>{
   const h=harness(),before=h.read(),writes=h.writes();
   h.click('day',{date:'2027-02-06'});assert.equal(h.open(),true);

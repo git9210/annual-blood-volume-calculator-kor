@@ -351,7 +351,8 @@ footer{font-size:11px;line-height:1.8}
 .topbar>div{flex-shrink:0}
 
 /* A date is one touch target. The four miniature labels are informational. */
-.calendar-card .calendar-month button.day{width:100%;font-weight:inherit;touch-action:manipulation}
+.calendar-card .calendar-scroll,.calendar-card .calendar-month button.day{touch-action:pan-y pinch-zoom}
+.calendar-card .calendar-month button.day{width:100%;font-weight:inherit}
 .calendar-card .calendar-month .day-status{cursor:inherit}
 .calendar-card .calendar-month button.day:focus-visible{outline:3px solid var(--green);outline-offset:1px}
 
@@ -480,6 +481,8 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .restriction-list summary{cursor:pointer;font-weight:750;font-size:16px;min-height:28px}.restriction-list summary .badge{margin-left:6px}
 .restriction-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .restriction-notice p{overflow-wrap:anywhere}.restriction-notice .quiet{color:inherit;min-height:44px}
-.calendar-card .calendar-month .day.manually-restricted{border-color:#bd746a;background:#fff3f0}
-.calendar-card .calendar-month .day.manually-restricted .day-flag{background:#8d4a40;color:#fff}
+.calendar-card .calendar-month .day.manually-restricted{border-color:#a79db1;background:#eeeaf2}
+.calendar-card .calendar-month .day.manually-restricted .cannot-donate{background:#f2eef5;border-color:#dcd3e3;color:#6b526e}
+.day-legend .manual-restriction{background:#eeeaf2;border-color:#a79db1}
+.calendar-card .calendar-month .day.manually-restricted .day-flag{background:#625571;color:#fff}
 @media(max-width:359px){.restriction-period strong{font-size:16px}.restriction-stepper{gap:8px}.restriction-entry{font-size:12px}}
