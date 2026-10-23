@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="kr.bloodnote.app" android:versionCode="19" android:versionName="2.2.1">
+    package="kr.bloodnote.app" android:versionCode="20" android:versionName="2.3.0">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <queries>
+        <package android:name="com.sk.redconnect" />
+    </queries>
     <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme"
         android:allowBackup="false" android:fullBackupContent="false"

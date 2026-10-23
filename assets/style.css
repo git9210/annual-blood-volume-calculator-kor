@@ -400,6 +400,14 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .date-popup-footer button{min-height:50px;padding:11px 8px;border-radius:13px;font-size:15px;line-height:1.45;word-break:keep-all}
 .date-popup-footer .secondary{background:#f2f4ed;border-color:#e0e6dc;color:#627469}
 .date-popup-footer .primary:disabled{background:#c5d3c7;color:#fff;opacity:1}
+.red-connect-shortcut{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:12px;padding:12px;background:#f5f8f3;border:1px solid #e0e7dc;border-radius:12px;min-width:0}
+.red-connect-shortcut p{font-size:11px;color:var(--muted);line-height:1.65;word-break:keep-all;overflow-wrap:anywhere;flex:1 1 160px}
+.red-connect-shortcut strong{display:block;font-size:12px;color:var(--ink);margin-bottom:2px}
+.red-connect-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;max-width:100%;padding:10px 12px;border:1px solid #b4cabc;border-radius:10px;background:#fff;color:var(--green);font-size:13px;font-weight:700;line-height:1.5;word-break:keep-all}
+.red-connect-button svg{flex-shrink:0}
+.date-popup-booking{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;text-align:center}
+.date-popup-booking .red-connect-button{width:100%}
+@media(max-width:479px){.plan-row .red-connect-button{width:100%}}
 @media(max-width:359px){
   dialog.calendar-date-dialog{padding:22px 15px 16px}
   .date-popup-head{padding-left:14px;padding-right:14px}

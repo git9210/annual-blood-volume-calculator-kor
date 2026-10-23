@@ -149,6 +149,58 @@ test('Backdrop dismissal runs existing PDF and backup cancellation cleanup and a
   h.click('close-dialog');assert.equal(h.open(),false);
 });
 
+function redConnectBridge(h){
+  h.run('window.redConnectRequests=[];window.BloodNoteAndroid={requestRedConnect(...args){window.redConnectRequests.push(args);}}');
+  return ()=>JSON.parse(h.run('JSON.stringify(window.redConnectRequests)'));
+}
+test('Red Connect popup shortcut requests native consent only on tap, sends no data and preserves an unsaved choice',()=>{
+  const h=harness(),requests=redConnectBridge(h),before=h.read(),writes=h.writes();
+  h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'plasma'});
+  assert.match(h.html(),/data-action="day-red-connect"/);assert.match(h.html(),/선택 완료.*저장/);
+  assert.deepEqual(requests(),[]);h.click('day-red-connect');
+  assert.deepEqual(requests(),[[]]);assert.equal(h.open(),true);
+  assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
+  assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
+  h.click('day-confirm');assert.equal(h.read().plans.length,1);
+  h.click('day',{date:'2027-02-19'});h.click('day-red-connect');
+  assert.deepEqual(requests(),[[],[]]);assert.equal(h.read().plans.length,1);
+});
+test('Exactly the earliest today-or-future plan has a shortcut, and deletion or date rollover moves it',()=>{
+  const h=harness({plans:[{id:'later',date:'2027-02-19',type:'whole'},{id:'past',date:'2026-10-01',type:'mixed'},{id:'next',date:'2026-11-06',type:'plasma'},{id:'due',date:'2026-10-22',type:'platelet'}]});
+  const requests=redConnectBridge(h),ids=()=>[...h.app().matchAll(/data-action="plan-red-connect" data-id="([^"]+)"/g)].map(m=>m[1]);
+  assert.deepEqual(ids(),['due']);assert.deepEqual(requests(),[]);
+  h.click('plan-red-connect',{id:'later'});h.click('plan-red-connect',{id:'past'});assert.deepEqual(requests(),[]);
+  const before=h.read();h.click('plan-red-connect',{id:'due'});assert.deepEqual(requests(),[[]]);assert.deepEqual(h.read(),before);
+  h.click('delete-plan',{id:'due'});assert.deepEqual(ids(),['next']);
+  h.click('plan-red-connect',{id:'due'});assert.equal(requests().length,1);
+  h.today('2026-11-07',true);assert.deepEqual(ids(),['later']);
+  h.click('plan-red-connect',{id:'next'});assert.equal(requests().length,1);
+  h.click('delete-plan',{id:'later'});assert.deepEqual(ids(),[]);assert.equal(h.requests(),0);
+});
+test('Past dates, completed donations and closed or stale date popups cannot open Red Connect',()=>{
+  const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}]}),requests=redConnectBridge(h),before=h.read();
+  for(const date of ['2026-10-21','2026-10-22']){
+    h.click('day',{date});assert.doesNotMatch(h.html(),/data-action="day-red-connect"/);
+    h.click('day-red-connect');h.click('close-dialog');
+  }
+  h.click('day',{date:'2026-10-23'});h.click('close-dialog');h.click('day-red-connect');
+  h.click('day',{date:'2026-10-23'});h.today('2026-10-24');h.click('day-red-connect');
+  assert.doesNotMatch(h.html(),/data-action="day-red-connect"/);assert.deepEqual(requests(),[]);
+  h.click('day',{date:'2027-02-19'});h.run("state.plans.push({id:'changed',date:'2027-02-18',type:'plasma'})");h.click('day-red-connect');
+  assert.match(h.html(),/기록이나 계획이 바뀌었습니다/);assert.deepEqual(requests(),[]);
+  assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
+});
+test('Unavailable or failing bridge and demo mode keep all data and never fall back to a website',()=>{
+  const h=harness({plans:[{id:'upcoming',date:'2026-11-06',type:'plasma'}]}),before=h.read();
+  h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/Android 앱/);
+  h.run("window.BloodNoteAndroid={requestRedConnect(){throw Error('unavailable')}}");
+  h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/열지 못했습니다/);
+  const requests=redConnectBridge(h);h.run('realState=clone(state);demoMode=true;render()');
+  assert.match(h.app(),/data-action="plan-red-connect" data-id="upcoming" disabled/);
+  h.click('plan-red-connect',{id:'upcoming'});h.click('day',{date:'2026-11-06'});h.click('day-red-connect');
+  assert.deepEqual(requests(),[]);assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
+});
+
 test('Only actual donations get completed-day emphasis; past or due plans do not, and undo restores it',()=>{
   const records=[{id:'whole',date:'2026-10-01',type:'whole'},{id:'plasma',date:'2026-10-03',type:'plasma'},
     {id:'platelet',date:'2026-10-08',type:'platelet'},{id:'mixed',date:'2026-10-22',type:'mixed'}];

@@ -72,6 +72,7 @@ public final class MainActivity extends Activity {
     private String holidayConsentId;
     private boolean resumed;
     private AppUpdater updater;
+    private RedConnectLauncher redConnect;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -81,6 +82,7 @@ public final class MainActivity extends Activity {
         configureInsets(root);
         secureStore = new SecureStore(this);
         updater = new AppUpdater(this, () -> resumed && !isFinishing() && !isDestroyed());
+        redConnect = new RedConnectLauncher(this, () -> resumed && !isFinishing() && !isDestroyed());
         certificateImporter = new CertificateImporter(this, (phase, payload) -> {
             if (web != null && !isFinishing() && !isDestroyed())
                 web.evaluateJavascript("if(window.bloodNoteCertificateEvent)window.bloodNoteCertificateEvent(" + JSONObject.quote(phase) + "," + payload + ");", null);
@@ -239,6 +241,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void cancelExitHint() { runOnUiThread(MainActivity.this::resetExitHint); }
         @JavascriptInterface public void importCertificate() { runOnUiThread(() -> certificateImporter.choose()); }
         @JavascriptInterface public void requestAppUpdate() { runOnUiThread(() -> { resetExitHint(); updater.request(); }); }
+        @JavascriptInterface public void requestRedConnect() { runOnUiThread(() -> { resetExitHint(); redConnect.request(); }); }
         @JavascriptInterface public void cancelCertificateImport() { runOnUiThread(() -> certificateImporter.cancel()); }
         @JavascriptInterface public void requestHolidayConsent(String requestId) {
             if (requestId == null || !requestId.matches("[a-zA-Z0-9-]{1,64}")) return;
@@ -371,6 +374,7 @@ public final class MainActivity extends Activity {
     }
 
     private void handleBack() {
+        if (redConnect != null && redConnect.cancelPending()) { resetExitHint(); return; }
         if (holidayConsentId != null) { completeHolidayConsent(false); return; }
         // Honor a second back at the time it happens, before a WebView callback can be delayed.
         if (exitToastVisible) { backFromHome(); return; }
@@ -442,6 +446,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() {
         resumed = false;
         if (updater != null) updater.pause();
+        if (redConnect != null) redConnect.cancelPending();
         completeHolidayConsent(false);
         holidayAccess.clear();
         resetExitHint();
@@ -459,6 +464,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         resumed = false;
         if (updater != null) updater.destroy();
+        if (redConnect != null) redConnect.cancelPending();
         completeHolidayConsent(false);
         holidayAccess.clear();
         if (certificateImporter != null) certificateImporter.cancel();
