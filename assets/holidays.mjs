@@ -1,5 +1,5 @@
-import {validDate,weekday} from './engine.mjs?v=20261018-bottom-navigation';
-import {HOLIDAY_SNAPSHOT} from './holiday-snapshot.mjs?v=20261018-bottom-navigation';
+import {validDate,weekday} from './engine.mjs';
+import {HOLIDAY_SNAPSHOT} from './holiday-snapshot.mjs';
 
 export const HOLIDAY_URL='https://raw.githubusercontent.com/hyunbinseo/holidays-kr/main/public/basic.json';
 export const HOLIDAY_CACHE_KEY='blood-note-holidays-v1';

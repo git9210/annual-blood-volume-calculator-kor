@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_RULES,TYPES,clone,assess,earliest,simulate,availabilityForDate,inspectPlan,proposeMonthly,stats,releaseDate,validateRestrictions,normalizeRestrictionReason,activeRestrictions,RESTRICTION_MAX_DAYS} from '../assets/engine.mjs';
+import {DEFAULT_RULES,TYPES,clone,assess,earliest,simulate,availabilityForDate,inspectPlan,proposeMonthly,stats,releaseDate,validateRestrictions,normalizeRestrictionReason,restrictionReasonUnits,activeRestrictions,RESTRICTION_MAX_DAYS} from '../assets/engine.mjs';
 const ranges=[{id:'pause',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}];
 const event=(date,type='plasma')=>({id:date,date,type});
 
@@ -54,9 +54,17 @@ test('Existing plans are flagged without deletion; generated monthly drafts skip
 });
 test('Optional reasons obey Korean 20 / Latin 40 weighted bounds and reject emoji or markup',()=>{
   for(const text of ['', '약 복용', '가'.repeat(20),'a'.repeat(40),'가'.repeat(10)+'1'.repeat(20),`약 'A' (14)?! “휴식”`])assert.equal(normalizeRestrictionReason(text),text);
-  for(const text of ['가'.repeat(21),'a'.repeat(41),'가'.repeat(20)+'1','💊','🙂','ㅋㅋ','^^','<script>','a\nb','a\tb','a\u200bb'])assert.throws(()=>normalizeRestrictionReason(text));
+  for(const text of ['가'.repeat(21),'a'.repeat(41),'가'.repeat(20)+'1','💊','🙂','^^','<script>','a\nb','a\tb','a\u200bb'])assert.throws(()=>normalizeRestrictionReason(text));
   assert.equal(normalizeRestrictionReason('  약 복용  '),'약 복용');
   assert.equal(normalizeRestrictionReason('가'.normalize('NFD')),'가');
+});
+test('Standalone Korean jamo and IME prefixes are accepted with the same 20-letter limit, without allowing invisible fillers',()=>{
+  for(const text of ['ㄱ','ㄴ','ㅡ','ㅣ','ㅋㅋ','ㄱㄴㅡㅣ','ᄀ','ᅡ','ᆨ','ㄱ'.repeat(20),'ㅣ'.repeat(10)+'1'.repeat(20)])assert.equal(normalizeRestrictionReason(text),text);
+  for(let code=0x3131;code<=0x3163;code++)assert.equal(restrictionReasonUnits(String.fromCharCode(code)),2);
+  assert.equal(normalizeRestrictionReason('가'),'가');
+  for(const text of ['ㄱ'.repeat(21),'ㅣ'.repeat(20)+'1','\u115f','\u1160','\u3164','\uffa0'])assert.throws(()=>normalizeRestrictionReason(text));
+  const stored=validateRestrictions([{id:'jamo',start:'2026-10-23',end:'2026-10-23',reason:'ㄱ ㄴ ㅡ ㅣ'}]);
+  assert.equal(stored[0].reason,'ㄱ ㄴ ㅡ ㅣ');
 });
 test('Malformed backups, duplicate IDs, overlong periods and excessive entries are rejected',()=>{
   assert.deepEqual(validateRestrictions(undefined),[]);assert.deepEqual(validateRestrictions(ranges),ranges);

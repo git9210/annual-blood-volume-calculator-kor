@@ -135,3 +135,20 @@ test('24개월 초안의 모든 새 일정은 간격·횟수·이동연간한도
   assert.equal(result.draft.some(e=>e.date.startsWith('2026-12')),false);
   assert.equal(result.draft.some(e=>e.date.startsWith('2026-10')),false);
 });
+
+test('Unordered histories retain annual-boundary totals, exclude future entries and select the latest prior donation without mutation',()=>{
+  const history=[event('2026-03-01','whole','future'),event('2025-02-28','mixed','boundary'),event('2025-02-27','whole','expired'),
+    event('2026-02-20','whole','latest'),event('2025-03-01','plasma','inside'),event('2026-02-28','platelet','same-day')];
+  const before=clone(history),candidate=event('2026-02-28','whole','candidate');
+  for(const boundary of ['exclude','include']){
+    const rules={...clone(DEFAULT_RULES),boundary},s=stats(history,candidate.date,rules),check=assess(candidate,history,rules);
+    assert.equal(s.used,boundary==='include'?655:565);assert.equal(s.whole,1);assert.equal(s.components,boundary==='include'?3:2);
+    assert.deepEqual(s.entries.map(row=>row.id),boundary==='include'?['boundary','latest','inside','same-day']:['latest','inside','same-day']);
+    assert.equal(s.start,boundary==='include'?'2025-02-28':'2025-03-01');assert.equal(check.previous.id,'latest');
+    assert.deepEqual(codes(check),['duplicate','interval']);assert.deepEqual(assess(candidate,[...history].reverse(),rules),check);
+  }
+  const tie=event('2026-02-20','plasma','tied');
+  assert.equal(assess(candidate,[...history,tie]).previous.id,'latest');
+  assert.equal(assess(candidate,[tie,...history]).previous.id,'tied');
+  assert.deepEqual(history,before);
+});

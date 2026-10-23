@@ -7,6 +7,8 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
+import * as screenLayout from '../assets/screen-layout.mjs';
+import * as layoutDrag from '../assets/layout-drag.mjs';
 import * as certificate from '../assets/certificate-import.mjs';
 import {createHolidayStore,HOLIDAY_CACHE_KEY,HOLIDAY_URL} from '../assets/holidays.mjs';
 import {HOLIDAY_SNAPSHOT} from '../assets/holiday-snapshot.mjs';
@@ -22,16 +24,18 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
     addEventListener:(event,fn)=>events[key+':'+event]=fn,removeEventListener(){},setAttribute(){},querySelectorAll:()=>[],
     scrollIntoView(){},focus(){},showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const match of readFileSync(new URL('index.html',assets),'utf8').matchAll(/id="([^"]+)"/g))elements.set('#'+match[1],node('#'+match[1]));
-  for(const key of ['#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status'])elements.set(key,node(key));
+  for(const key of ['#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status','#screen-widgets','#event-form','#event-feedback','#import-text','#save-import','#parse-import','#import-preview','#draft-start','#draft-months','#draft-preference','#draft-preview','#generate-draft','#save-draft'])elements.set(key,node(key));
+  elements.get('#event-form').elements={date:{value:'2026-10-01'},type:{value:'plasma'}};
+  elements.get('#draft-start').value='2026-11-01';elements.get('#draft-months').value='6';elements.get('#draft-preference').value='plasma';
   const form=elements.get('#backup-password-form');form.elements={password:{value:''},confirm:{value:''}};
   form.querySelector=()=>({disabled:false});form.reset=()=>{form.elements.password.value='';form.elements.confirm.value='';};
   const cache=new Map([['blood-note-v1',JSON.stringify(initial)]]);
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
-  const document={querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn};
-  const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,scrollTo(){},BloodNoteAndroid:{
+  const document={querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn,removeEventListener(){}};
+  const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,removeEventListener(){},scrollTo(){},BloodNoteAndroid:{
     requestHolidayConsent:id=>prompts.push(id),finishHolidayRefresh:id=>finished.push(id),saveText:(name,mime,text)=>exports.push({name,mime,text})}};
   const payload=engine.clone(HOLIDAY_SNAPSHOT.years);payload[2026]['2026-10-20']=['임시공휴일 테스트'];
-  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...certificate,today:()=>currentDate,
+  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...screenLayout,...layoutDrag,...certificate,today:()=>currentDate,
     createHolidayStore:opts=>createHolidayStore({...opts,fetcher:async(url,options)=>{
       requests.push({url,options});await new Promise(resolve=>release=resolve);
       if(networkFailure)throw Error('offline');return {ok:true,text:async()=>JSON.stringify(payload)};
@@ -196,7 +200,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.4.1/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.6.2/);
   assert.equal(h.requests.length,0);
 });
 
@@ -207,7 +211,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v2.4.1/);
+  assert.match(h.html(),/현재 v2.6.2/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -635,4 +639,142 @@ test('Old backups default to both Red Connect shortcuts on and failed or demo se
   assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
   assert.deepEqual(h.relaunch().read().displayOptions,{redConnectCalendar:false,redConnectPlan:false});
   assert.equal(h.requests.length,0);
+});
+
+test('Screen editing is offered only on the two editable pages and requires current-page confirmation',()=>{
+  const h=harness(2),before=h.read();
+  for(const page of ['records','settings']){h.click(page);assert.equal(h.elements.get('#layout-toggle').hidden,true);h.click('layout-request');assert.equal(h.run('screenEditor'),null);}
+  for(const page of ['dashboard','planner']){
+    h.click(page);assert.equal(h.elements.get('#layout-toggle').hidden,false);h.click('layout-request');
+    assert.match(h.elements.get('#dialog-content').innerHTML,/화면을 편집할까요/);assert.equal(h.run('screenEditor'),null);
+    h.click('close-dialog');assert.deepEqual(h.read(),before);
+  }
+  h.click('dashboard');h.click('layout-request');h.click('settings');h.click('layout-begin',{layoutPage:'dashboard'});assert.equal(h.run('screenEditor'),null);
+  h.click('close-dialog');h.run('toggleDemo()');h.click('layout-request');assert.equal(h.run('screenEditor'),null);assert.deepEqual(h.read(),before);
+});
+test('Draft widget moves never save records; cancel/back restore order and each page saves independently across restart',()=>{
+  const h=harness(3),before=h.read(),ids=()=>[...h.html().matchAll(/data-layout-id="([^"]+)"/g)].map(m=>m[1]);
+  h.click('dashboard');const original=ids();h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});
+  assert.equal(h.elements.get('#layout-toolbar').hidden,false);assert.equal(h.elements.get('#quick-add').hidden,true);
+  h.click('layout-up',{id:'recent'});assert.notDeepEqual(ids(),original);assert.deepEqual(h.read(),before);
+  h.click('layout-cancel');assert.deepEqual(ids(),original);assert.deepEqual(h.read(),before);
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'balance'});
+  h.click('records');assert.equal(h.run('page'),'dashboard');assert.equal(h.window.bloodNoteHandleBack(),true);assert.deepEqual(ids(),original);assert.deepEqual(h.read(),before);
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'balance'});const dashboard=ids();h.click('layout-save');
+  assert.deepEqual(h.read().screenLayouts.dashboard,dashboard);assert.equal(h.run('undoAction'),undefined);assert.equal(h.run('screenEditor'),null);
+  h.click('planner');h.click('layout-request');h.click('layout-begin',{layoutPage:'planner'});assert.equal(ids().length,4);
+  h.click('layout-up',{id:'annual'});const planner=ids();h.click('layout-save');
+  assert.deepEqual(h.read().screenLayouts.planner,planner);assert.deepEqual(h.read().screenLayouts.dashboard,dashboard);
+  const reopened=h.relaunch();reopened.click('dashboard');assert.deepEqual([...reopened.html().matchAll(/data-layout-id="([^"]+)"/g)].map(m=>m[1]),dashboard);
+  const {screenLayouts,...rest}=h.read();assert.deepEqual(rest,before);assert.equal(h.requests.length,0);
+});
+test('Layout save failure preserves the previous stored state and leaves the draft retryable',()=>{
+  const h=harness(2),before=h.read();h.click('dashboard');h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'balance'});
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-save');
+  assert.deepEqual(h.read(),before);assert.ok(h.run('screenEditor'));assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  h.storage.setItem=write;h.click('layout-save');assert.equal(h.run('screenEditor'),null);assert.equal(h.read().screenLayouts.dashboard[0],'next');
+  assert.deepEqual(h.read().records,before.records);assert.deepEqual(h.read().plans,before.plans);assert.equal(h.requests.length,0);
+});
+test('Default layout reset requires the edit menu and a second current-page confirmation; cancel/back and stale clicks preserve data',()=>{
+  const saved={...fixture(2),screenLayouts:{dashboard:[...screenLayout.layoutOrder('dashboard')].reverse(),planner:[...screenLayout.layoutOrder('planner')].reverse()}};
+  const h=harness(2,{savedState:saved,hash:'#dashboard'}),before=h.read();
+  h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),before);
+  h.click('layout-request');assert.match(h.elements.get('#dialog-content').innerHTML,/layout-reset-row[\s\S]*기본 배치로 초기화/);
+  h.click('layout-reset-request',{layoutPage:'dashboard'});
+  assert.match(h.elements.get('#dialog-content').innerHTML,/현재 화면의 배치가 즉시 초기화/);assert.deepEqual(h.read(),before);
+  h.click('layout-begin',{layoutPage:'dashboard'});assert.equal(h.run('screenEditor'),null);
+  h.click('layout-reset-cancel',{layoutPage:'dashboard'});assert.match(h.elements.get('#dialog-content').innerHTML,/화면을 편집할까요/);
+  h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),before);
+  h.click('layout-reset-request',{layoutPage:'dashboard'});assert.equal(h.window.bloodNoteHandleBack(),true);
+  h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),before);
+  h.click('layout-request');h.click('layout-reset-request',{layoutPage:'dashboard'});h.click('planner');
+  h.click('layout-reset-confirm',{layoutPage:'dashboard'});h.click('layout-reset-confirm',{layoutPage:'planner'});assert.deepEqual(h.read(),before);
+  h.click('close-dialog');h.click('records');h.click('layout-reset-request',{layoutPage:'records'});assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+test('Reset restores only the selected screen, preserves donation data/settings and survives restart and encrypted backup',async()=>{
+  const saved={...fixture(3),startPage:'planner',displayOptions:{redConnectCalendar:false,balanceHighlight:false},restrictions:[{id:'pause',start:'2026-10-23',end:'2026-10-24',reason:'ㄱ 약 복용'}],
+    screenLayouts:{dashboard:[...screenLayout.layoutOrder('dashboard')].reverse(),planner:[...screenLayout.layoutOrder('planner')].reverse()}};
+  const h=harness(3,{savedState:saved,hash:'#dashboard'}),before=h.read();
+  h.click('layout-request');h.click('layout-reset-request',{layoutPage:'dashboard'});h.click('layout-reset-confirm',{layoutPage:'dashboard'});
+  assert.deepEqual(h.read().screenLayouts.dashboard,screenLayout.layoutOrder('dashboard'));
+  assert.deepEqual(h.read().screenLayouts.planner,before.screenLayouts.planner);
+  const {screenLayouts:ignored,...after}=h.read(),{screenLayouts:old,...previous}=before;assert.deepEqual(after,previous);
+  assert.equal(h.run('screenEditor'),null);assert.equal(h.elements.get('#dialog').open,false);
+  let reopened=h.relaunch();assert.equal(reopened.run('page'),'planner');assert.deepEqual(reopened.read(),h.read());
+  reopened.click('layout-request');reopened.click('layout-reset-request',{layoutPage:'planner'});reopened.click('layout-reset-confirm',{layoutPage:'planner'});
+  assert.deepEqual(reopened.read().screenLayouts.planner,screenLayout.layoutOrder('planner'));
+  assert.deepEqual(reopened.read().screenLayouts.dashboard,screenLayout.layoutOrder('dashboard'));
+  reopened.click('settings');reopened.click('export-backup');await reopened.password('safe-backup-password');
+  const restored=JSON.parse(await backupCrypto.decryptBackup(JSON.parse(reopened.exports[0].text),'safe-backup-password'));
+  assert.deepEqual(restored,reopened.read());assert.equal(h.requests.length+reopened.requests.length,0);
+});
+test('A failed layout reset leaves the saved layout intact and can be retried, while demo and unreadable storage cannot reset',()=>{
+  const saved={...fixture(2),screenLayouts:{dashboard:[...screenLayout.layoutOrder('dashboard')].reverse()}},h=harness(2,{savedState:saved,hash:'#dashboard'}),before=h.read();
+  h.click('layout-request');h.click('layout-reset-request',{layoutPage:'dashboard'});
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-reset-confirm',{layoutPage:'dashboard'});
+  assert.deepEqual(h.read(),before);assert.equal(h.elements.get('#dialog').open,true);assert.equal(h.run('layoutPrompt.kind'),'reset');
+  h.storage.setItem=write;h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read().records,before.records);
+  const reset=h.read();h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),reset);
+  h.click('demo');h.click('layout-request');h.click('layout-reset-request',{layoutPage:'dashboard'});h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),reset);
+  h.click('demo');h.run('storageFailed=true');h.click('layout-request');h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),reset);
+});
+test('Encrypted backups retain both saved layouts; restoring an old backup preserves existing screen preferences',async()=>{
+  const saved={...fixture(2),screenLayouts:{dashboard:screenLayout.layoutOrder('dashboard').reverse(),planner:screenLayout.layoutOrder('planner').reverse()}};
+  const h=harness(2,{savedState:saved});h.click('export-backup');await h.password('valid-test-password');
+  const envelope=h.exports[0].text;assert.doesNotMatch(envelope,/screenLayouts|component-count/);
+  assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(envelope),'valid-test-password')),saved);
+  const legacy=fixture(1);await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(JSON.stringify(legacy))}})`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read().screenLayouts,saved.screenLayouts);assert.deepEqual(h.read().records,legacy.records);
+  assert.deepEqual(h.relaunch().read().screenLayouts,saved.screenLayouts);assert.equal(h.requests.length,0);
+});
+
+
+test('Failed direct entry keeps the editor and its values available for a successful retry',()=>{
+  const h=harness(2),before=h.read();h.click('add-record');
+  const form=h.elements.get('#event-form');form.elements.date.value='2026-10-01';form.elements.type.value='platelet';
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};
+  h.events['#event-form:submit']({preventDefault(){}});
+  assert.deepEqual(h.read(),before);assert.equal(h.elements.get('#dialog').open,true);
+  assert.equal(form.elements.date.value,'2026-10-01');assert.equal(form.elements.type.value,'platelet');
+  h.storage.setItem=write;h.events['#event-form:submit']({preventDefault(){}});
+  assert.equal(h.elements.get('#dialog').open,false);assert.equal(h.read().records.length,3);
+  assert.equal(h.read().records.at(-1).type,'platelet');assert.deepEqual(h.relaunch().read(),h.read());
+});
+
+test('Failed pasted-record and generated-plan commits preserve the reviewed rows for retry',()=>{
+  for(const mode of ['text','draft']){
+    const h=harness(2),before=h.read();
+    if(mode==='text'){
+      h.click('import-text');h.elements.get('#import-text').value='2026-10-01 혈장';h.elements.get('#parse-import').onclick();
+    }else{h.click('auto-plan');h.elements.get('#generate-draft').onclick();}
+    const commit=h.elements.get(mode==='text'?'#save-import':'#save-draft');assert.equal(commit.disabled,false);
+    const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};commit.onclick();
+    assert.deepEqual(h.read(),before);assert.equal(h.elements.get('#dialog').open,true,mode);
+    h.storage.setItem=write;commit.onclick();assert.equal(h.elements.get('#dialog').open,false);
+    assert.ok((mode==='text'?h.read().records.length:h.read().plans.length)>(mode==='text'?before.records.length:before.plans.length));
+    assert.deepEqual(h.relaunch().read(),h.read());assert.equal(h.requests.length,0);
+  }
+});
+
+test('Manual and batch additions cannot exceed 3000 events or make the next launch unreadable',()=>{
+  for(const mode of ['manual','text','draft']){
+    const count=mode==='text'?2999:3000;
+    const saved={...fixture(0),records:Array.from({length:count},(_,i)=>({id:'historical-'+i,date:engine.addDays('2010-01-01',i),type:'plasma'}))};
+    const h=harness(count,{savedState:saved}),before=h.read();
+    if(mode==='manual'){h.click('add-record');h.events['#event-form:submit']({preventDefault(){}});}
+    else if(mode==='text'){
+      h.click('import-text');h.elements.get('#import-text').value='2026-10-01 혈장\n2026-10-02 혈장';h.elements.get('#parse-import').onclick();h.elements.get('#save-import').onclick();
+    }else{h.click('auto-plan');h.elements.get('#generate-draft').onclick();h.elements.get('#save-draft').onclick();}
+    assert.deepEqual(h.read(),before,mode);assert.deepEqual(h.relaunch().read(),before);
+    assert.equal(h.elements.get('#dialog').open,true,mode);assert.match(h.elements.get('#toast').innerHTML,/3,000/);
+  }
+});
+
+test('Backups reject inherited object keys and non-string donation types before the restore confirmation',async()=>{
+  for(const type of ['constructor','toString','__proto__',['whole']]){
+    const h=harness(2),before=h.read(),bad=fixture(1);bad.records[0].type=type;
+    await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(JSON.stringify(bad))}})`);
+    assert.equal(!!h.elements.get('#dialog').open,false);
+    assert.deepEqual(h.read(),before);assert.match(h.elements.get('#toast').innerHTML,/복원하지 못했습니다/);
+  }
 });

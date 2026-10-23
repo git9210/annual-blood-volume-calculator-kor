@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
+import * as screenLayout from '../assets/screen-layout.mjs';
+import * as layoutDrag from '../assets/layout-drag.mjs';
 import * as licenses from '../assets/licenses.mjs';
 
 test('Restriction editor replaces the date popup, keeps only the date range card and preserves an unsaved choice',()=>{
@@ -26,6 +28,18 @@ test('Restriction editor replaces the date popup, keeps only the date range card
   assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
   assert.match(h.app(),/manually-restricted/);assert.match(h.app(),/헌혈 제한 기간/);
   h.run("setPage('dashboard')");h.today('2026-10-23',true);assert.match(h.app(),/등록한 헌혈 제한이 적용 중/);
+  assert.equal(h.requests(),0);
+});
+test('Restriction reason input accepts composing jamo, keeps the date range valid, and saves the entered letters',()=>{
+  const h=harness();h.click('day',{date:'2026-10-23'});h.click('restriction-new');
+  for(const reason of ['ㄱ','ㄴ','ㅡ','ㅣ','ᄀ','가','가','ㄱ ㄴ ㅡ ㅣ']){
+    h.restrictionForm({reason});
+    assert.equal(h.nodes.get('#restriction-feedback').hidden,true);
+    assert.equal(h.nodes.get('#restriction-range').textContent,'2026. 10. 23. ~ 2026. 10. 23.');
+  }
+  h.restrictionForm().onsubmit({preventDefault(){}});
+  const stored=h.read().restrictions[0];assert.equal(stored.reason,'ㄱ ㄴ ㅡ ㅣ');
+  h.click('restriction-edit',{id:stored.id});assert.equal(h.restrictionForm().elements.reason.value,stored.reason);
   assert.equal(h.requests(),0);
 });
 test('Restriction edit/delete/undo retain records, plans and settings across a relaunch',()=>{
@@ -91,7 +105,7 @@ function harness({records=[],plans=[],restrictions}={}){
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>{if(fail)throw Error('full');cache.set(key,value);writes++;}};
   const document={querySelector:key=>nodes.get(key)||null,querySelectorAll:()=>[],addEventListener:(type,fn,capture)=>events['doc:'+type+(capture?':capture':'')]=fn};
   const window={localStorage:storage,addEventListener(){},scrollTo(){}};
-  const context=vm.createContext({...engine,...calendar,...licenses,...backupCrypto,today:()=>date,
+  const context=vm.createContext({...engine,...calendar,...screenLayout,...layoutDrag,...licenses,...backupCrypto,today:()=>date,
     createProtectedStorage:({legacyStorage})=>legacyStorage,createHolidayStore:opts=>createHolidayStore({...opts,fetcher:async()=>{requests++;throw Error('Unexpected network');}}),
     window,document,navigator:{},location:{hash:'#planner',origin:'https://appassets.androidplatform.net',href:'https://appassets.androidplatform.net/assets/index.html#planner'},URL,crypto:webcrypto,
     setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});

@@ -48,7 +48,8 @@ public final class MainActivity extends Activity {
     private static final String HOLIDAYS = "https://raw.githubusercontent.com/hyunbinseo/holidays-kr/main/public/basic.json";
     private static final Set<String> ASSETS = new HashSet<>(Arrays.asList(
         "index.html", "app.mjs", "engine.mjs", "calendar-view.mjs", "holidays.mjs",
-        "holiday-snapshot.mjs", "licenses.mjs", "certificate-import.mjs", "secure-storage.mjs", "backup-crypto.mjs", "style.css", "icon.svg",
+        "holiday-snapshot.mjs", "licenses.mjs", "certificate-import.mjs", "secure-storage.mjs", "backup-crypto.mjs",
+        "screen-layout.mjs", "layout-drag.mjs", "style.css", "icon.svg",
         "holiday-data-license.txt"
     ));
     private static final Set<String> EXTERNAL_HOSTS = new HashSet<>(Arrays.asList(

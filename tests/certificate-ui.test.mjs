@@ -7,6 +7,8 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
+import * as screenLayout from '../assets/screen-layout.mjs';
+import * as layoutDrag from '../assets/layout-drag.mjs';
 import * as certificate from '../assets/certificate-import.mjs';
 import {createHolidayStore} from '../assets/holidays.mjs';
 const root=new URL('../assets/',import.meta.url);
@@ -26,7 +28,7 @@ function harness(initial=blank(),currentDate='2026-10-18'){
   const storage={getItem:k=>cache.get(k)||null,setItem:(k,v)=>{if(failSave){const error=Error('Storage full');error.name='QuotaExceededError';throw error;}cache.set(k,v);}};
   const document={querySelector:s=>elements.get(s)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn};
   const window={localStorage:storage,BloodNoteAndroid:{importCertificate:()=>picks++,cancelCertificateImport:()=>cancels++},matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener(){},scrollTo(){}};
-  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...certificate,today:()=>currentDate,createHolidayStore:opts=>createHolidayStore({...opts,fetcher:async()=>{requests++;throw Error('Network not allowed');}}),window,document,localStorage:storage,navigator:{},location:{hash:'#records',href:'https://appassets.androidplatform.net/assets/index.html#records',origin:'https://appassets.androidplatform.net'},URL,crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...screenLayout,...layoutDrag,...certificate,today:()=>currentDate,createHolidayStore:opts=>createHolidayStore({...opts,fetcher:async()=>{requests++;throw Error('Network not allowed');}}),window,document,localStorage:storage,navigator:{},location:{hash:'#records',href:'https://appassets.androidplatform.net/assets/index.html#records',origin:'https://appassets.androidplatform.net'},URL,crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
   vm.runInContext(source,context);
   const run=code=>vm.runInContext(code,context);
   return {events,elements,window,run,fail:()=>{failSave=true;},allow:()=>{failSave=false;},

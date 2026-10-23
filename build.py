@@ -57,6 +57,9 @@ def main():
     run('java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-encoding', 'UTF-8',
         '-source', '8', '-target', '8', '-bootclasspath', str(TOOLS / 'core-lambda-stubs.jar') + os.pathsep + str(PLATFORM),
         '-d', BUILD / 'classes', *sources)
+    # Check the compiled Android routing policy against the APK's real web files.
+    # JS-only tests cannot catch a module blocked by the native request interceptor.
+    run('python3', ROOT / 'tools/verify_web_assets.py', BUILD / 'classes', PLATFORM, BUILD / 'base.apk')
     with zipfile.ZipFile(BUILD / 'classes.jar', 'w', zipfile.ZIP_DEFLATED) as jar:
         for path in sorted((BUILD / 'classes').rglob('*.class')):
             jar.write(path, path.relative_to(BUILD / 'classes'))

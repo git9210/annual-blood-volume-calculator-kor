@@ -251,13 +251,9 @@ footer{font-size:11px;line-height:1.8}
   .settings-toggle{position:static}
 }
 
-/* Repeat date navigation outside the horizontally scrollable calendar. */
+/* Calendar navigation in the header. */
 .calendar-navigation .icon-button{font-size:24px;line-height:1}
 .calendar-navigation .quiet{min-width:44px}
-.calendar-bottom{display:flex;flex-direction:column;align-items:center;gap:8px;margin:10px 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f7f9f3}
-.calendar-bottom-label{font-size:13px;font-weight:650;text-align:center;line-height:1.6}
-.calendar-bottom .calendar-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:min(100%,320px)}
-.calendar-bottom .calendar-navigation button{min-height:48px}
 
 /* Due plans can be resolved from either the calendar or the plan list. */
 .plan-review-label{margin-left:5px;background:#fff1d5;color:#805719}
@@ -478,7 +474,7 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .restriction-row:last-child{border-bottom:0}.restriction-row>div:first-child{min-width:0;flex:1 1 180px;overflow-wrap:anywhere}
 .restriction-row strong{font-size:13px}.restriction-row p{font-size:12px;color:var(--muted);margin-top:4px}
 .restriction-row .actions{flex:0 0 auto}.restriction-row .actions button{min-height:42px}
-.restriction-list summary{cursor:pointer;font-weight:750;font-size:16px;min-height:28px}.restriction-list summary .badge{margin-left:6px}
+.restriction-list summary,.plan-list summary{cursor:pointer;font-weight:750;font-size:16px;min-height:28px}.restriction-list summary .badge,.plan-list summary .badge{margin-left:6px}
 .restriction-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .restriction-notice p{overflow-wrap:anywhere}.restriction-notice .quiet{color:inherit;min-height:44px}
 .calendar-card .calendar-month .day.manually-restricted{border-color:#a79db1;background:#eeeaf2}
@@ -486,3 +482,45 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .day-legend .manual-restriction{background:#eeeaf2;border-color:#a79db1}
 .calendar-card .calendar-month .day.manually-restricted .day-flag{background:#625571;color:#fff}
 @media(max-width:359px){.restriction-period strong{font-size:16px}.restriction-stepper{gap:8px}.restriction-entry{font-size:12px}}
+
+.plan-list-head{margin-top:18px}
+
+/* Ordered widgets keep the phone column and adapt to wide displays. */
+.screen-widgets{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:22px}
+.screen-widget,.screen-widget-content{min-width:0}
+.screen-widget-content{height:100%}
+.screen-widget-content>.card,.screen-widget-content>.metric{height:100%;margin-top:0}
+.widget-span-2{grid-column:span 2}.widget-span-3{grid-column:span 3}.widget-span-6{grid-column:1/-1}
+.screen-edit-toggle{display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--green)}
+.screen-edit-toggle svg{display:block;width:24px;height:24px}
+.layout-toolbar{position:sticky;top:0;z-index:80;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 24px;border-bottom:1px solid #cbd9ce;background:#f3f7ed;box-shadow:0 3px 12px #203b3610}
+.layout-toolbar>strong{font-size:16px}.layout-toolbar .actions{flex-wrap:nowrap}
+.layout-edit-note{font-size:13px;line-height:1.8;background:#edf3e8;border-color:#d6e2cc;color:#345748;margin-bottom:16px}
+.layout-reset-row{border-top:1px solid var(--line);margin-top:18px;padding-top:10px}
+.layout-reset-row>.layout-reset-button{display:inline-flex;align-items:center;min-height:36px;padding:5px 0;font-size:12px;font-weight:500;color:var(--muted)}
+.screen-widgets.layout-editing{grid-template-columns:minmax(0,1fr);align-items:start;gap:14px}
+.layout-editing>.screen-widget{display:flex;flex-direction:column;gap:8px;grid-column:1/-1;align-self:start;height:auto;min-height:0;overflow:hidden;padding:12px;border:1px solid #c7d5cc;border-radius:0;background:#f8faf5;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.layout-handle{display:flex;flex:0 0 auto;align-items:center;gap:10px;min-height:48px;color:var(--green);cursor:grab}
+.layout-handle>strong{min-width:0;flex:1;font-size:14px;line-height:1.5}
+.layout-grip{flex:0 0 auto;font-size:26px;line-height:1;color:#71877b}
+.layout-move-actions{display:flex;gap:6px;flex:0 0 auto}
+.layout-move-actions button{min-width:42px;padding:7px;font-size:19px;line-height:1}
+.layout-editing [data-widget-preview]{display:flow-root;flex:0 1 auto;height:auto;min-height:0;max-height:132px;overflow:hidden;pointer-events:none;opacity:.86;border-radius:0;margin-top:0}
+.layout-editing [data-widget-preview]>.card,.layout-editing [data-widget-preview]>.metric{height:auto;min-height:0;max-width:100%;margin:0;border-radius:0}
+.layout-dragging{box-shadow:0 14px 40px #153d3a35;outline:2px solid #487a67;cursor:grabbing}
+.layout-placeholder{grid-column:1/-1;min-height:64px;border:2px dashed #6b927b;border-radius:0;background:#e8f0e4}
+.screen-layout-editing .sidebar nav button{opacity:.55}
+@media(max-width:1023px){
+  .screen-edit-toggle{position:absolute;top:16px;right:76px}
+  .screen-layout-enabled .sidebar .brand{padding-right:108px}
+  .screen-widgets{gap:16px}
+}
+@media(max-width:719px){
+  .screen-widgets{gap:16px 8px}
+  .screen-widgets:not(.layout-editing)>.widget-card{grid-column:1/-1}
+  .screen-edit-toggle{top:14px;right:calc(max(16px,env(safe-area-inset-right,0px)) + 52px)}
+  .screen-layout-enabled .sidebar .brand{font-size:clamp(16px,4.6vw,21px)}
+  .layout-toolbar{padding:10px 16px}
+  .layout-editing>.screen-widget{padding:10px}
+  .layout-handle{gap:7px}.layout-handle>strong{font-size:13px}
+}

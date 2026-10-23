@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
+import * as screenLayout from '../assets/screen-layout.mjs';
+import * as layoutDrag from '../assets/layout-drag.mjs';
 import {createHolidayStore as holidayStore} from '../assets/holidays.mjs';
 const root=new URL('../assets/',import.meta.url).pathname;
 const node=()=>({innerHTML:'',textContent:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},removeEventListener(){},setAttribute(){},querySelectorAll(){return[]},focus(){},showModal(){this.open=true},close(){this.open=false}});
@@ -18,7 +20,7 @@ let mediaChange,requests=0;
 const media={matches:true,addEventListener:(type,fn)=>mediaChange=fn};
 const document={querySelector:s=>elements.get(s)||null,querySelectorAll:()=>[],addEventListener:(type,fn,capture)=>events[type+(capture?':capture':'')]=fn};
 const window={localStorage:storage,matchMedia:()=>media,addEventListener(){},scrollTo(){}};
-const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...screenLayout,...layoutDrag,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
 vm.runInContext(readFileSync(root+'app.mjs','utf8').replace(/^import .*;\n/gm,''),context);
 const click=data=>{const b={dataset:data,disabled:false,getBoundingClientRect:()=>({top:600})};events.click({preventDefault(){},target:{closest:sel=>sel==='[data-page]'?(data.page?b:null):(data.action?b:null)}})};
 const read=()=>JSON.parse(storage.getItem('blood-note-v1'));
@@ -42,29 +44,27 @@ click({action:'day-type',type:'plasma'});assert.equal(read().plans.length,0);
 click({action:'day-confirm'});
 assert.equal(read().plans.length,1);assert.equal(read().plans[0].date,future);assert.equal(read().records.length,0);
 click({page:'records'});assert.equal((app.innerHTML.match(/class="record-date"/g)||[]).length,0);
-click({page:'settings'});assert.match(app.innerHTML,/안드로이드 2.4.1/);assert.match(app.innerHTML,/data-action="demo"/);
+click({page:'settings'});assert.match(app.innerHTML,/안드로이드 2.6.2/);assert.match(app.innerHTML,/data-action="demo"/);
 assert.equal(requests,0);
 console.log('PASS: monthly calendar, date popup, confirm-once plan creation, records/settings, zero holiday requests. CSS is not rendered in this check.');
 
 click({page:'planner'});
-for(const action of ['calendar-prev','month-today','calendar-next'])assert.equal((app.innerHTML.match(new RegExp('data-action="'+action+'"','g'))||[]).length,2);
-let buttonTop=800,focusOptions;
-const replacement={disabled:false,getBoundingClientRect:()=>({top:buttonTop}),focus:options=>focusOptions=options};
-for(const action of ['calendar-prev','month-today','calendar-next'])elements.set('[data-calendar-nav="bottom"] [data-action="'+action+'"]',replacement);
+for(const action of ['calendar-prev','month-today','calendar-next'])assert.equal((app.innerHTML.match(new RegExp('data-action="'+action+'"','g'))||[]).length,1);
+assert.doesNotMatch(app.innerHTML,/calendar-bottom|data-calendar-nav="bottom"/);
+let focusOptions;
+const replacement={disabled:false,focus:options=>focusOptions=options};
+for(const action of ['calendar-prev','month-today','calendar-next'])elements.set('[data-calendar-nav="top"] [data-action="'+action+'"]',replacement);
 window.scrollY=1000;window.scrollX=0;window.scrollTo=options=>window.scrollY=options.top;
 const beforeMonth=days()[0];
-click({action:'calendar-next',calendarPosition:'bottom'});
-assert.equal(days()[0],calendar.calendarWindow(beforeMonth,'month').next);assert.equal(window.scrollY,1200);assert.equal(focusOptions.preventScroll,true);
-window.scrollY=1000;buttonTop=400;
-click({action:'calendar-prev',calendarPosition:'bottom'});
-assert.equal(days()[0],beforeMonth);assert.equal(window.scrollY,800);
+click({action:'calendar-next'});
+assert.equal(days()[0],calendar.calendarWindow(beforeMonth,'month').next);assert.equal(window.scrollY,1000);assert.equal(focusOptions.preventScroll,true);
+click({action:'calendar-prev'});assert.equal(days()[0],beforeMonth);assert.equal(window.scrollY,1000);
 events['app:change']({target:{id:'sim-date',value:'2026-10-18',dataset:{}}});
 const stored=storage.getItem('blood-note-v1');
-click({action:'calendar-next',calendarPosition:'bottom'});
-assert.equal(days()[0],'2026-11-01');assert.equal(days().length,30);
-click({action:'month-today',calendarPosition:'bottom'});
+click({action:'calendar-next'});assert.equal(days()[0],'2026-11-01');assert.equal(days().length,30);
+click({action:'month-today'});
 assert.ok(days().includes(engine.today()));assert.equal(storage.getItem('blood-note-v1'),stored);assert.equal(requests,0);
-console.log('PASS: upper/lower controls, lower month paging, today button, scroll correction for taller/shorter calendars, focus preservation. No real browser rendering was performed.');
+console.log('PASS: only upper calendar controls remain; month paging, today button, focus preservation and records are unchanged. No real browser rendering was performed.');
 
 // Encrypted backup crosses the bridge only after password confirmation.
 const saves=[],backupButton={disabled:false};
@@ -108,7 +108,7 @@ console.log('PASS: password-encrypted backup export, external-link routing, conf
 
 // Relaunch uses the restored state; importing or restarting never seeds records.
 const saved=storage.getItem('blood-note-v1');
-const reloaded=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+const reloaded=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...screenLayout,...layoutDrag,createHolidayStore:options=>holidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected holiday request')}}),window,document,localStorage:storage,navigator:{},URL,location:{hash:'#dashboard',href:'https://appassets.androidplatform.net/assets/index.html#dashboard',origin:'https://appassets.androidplatform.net'},crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
 vm.runInContext(readFileSync(root+'app.mjs','utf8').replace(/^import .*;\n/gm,''),reloaded);
 assert.equal(storage.getItem('blood-note-v1'),saved);
 assert.equal(read().records.length,1);

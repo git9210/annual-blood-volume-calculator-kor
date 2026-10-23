@@ -1,4 +1,4 @@
-import {addDays,validDate,weekday} from './engine.mjs?v=20261018-bottom-navigation';
+import {addDays,validDate,weekday} from './engine.mjs';
 
 const MIN='1900-01-01',MAX='2199-12-31';
 const clamp=date=>date<MIN?MIN:date>MAX?MAX:date;

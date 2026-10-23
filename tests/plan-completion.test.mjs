@@ -7,6 +7,8 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import * as engine from '../assets/engine.mjs';
 import * as calendar from '../assets/calendar-view.mjs';
+import * as screenLayout from '../assets/screen-layout.mjs';
+import * as layoutDrag from '../assets/layout-drag.mjs';
 import {createHolidayStore} from '../assets/holidays.mjs';
 
 const root=new URL('../assets/',import.meta.url);
@@ -25,7 +27,7 @@ function harness(){
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
   const document={querySelector:s=>elements.get(s)||null,querySelectorAll:()=>[],visibilityState:'visible',addEventListener:(type,fn,capture)=>events['document:'+type+(capture?':capture':'')]=fn};
   const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,scrollTo(){}};
-  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,today:()=>currentDate,createHolidayStore:options=>createHolidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected network request')}}),document,window,localStorage:storage,navigator:{},location:{hash:'#planner',href:'https://appassets.androidplatform.net/assets/index.html#planner',origin:'https://appassets.androidplatform.net'},URL,crypto:webcrypto,setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
+  const context=vm.createContext({...licenses,...backupCrypto,createProtectedStorage:({legacyStorage})=>legacyStorage,...engine,...calendar,...screenLayout,...layoutDrag,today:()=>currentDate,createHolidayStore:options=>createHolidayStore({...options,fetcher:async()=>{requests++;throw Error('Unexpected network request')}}),document,window,localStorage:storage,navigator:{},location:{hash:'#planner',href:'https://appassets.androidplatform.net/assets/index.html#planner',origin:'https://appassets.androidplatform.net'},URL,crypto:webcrypto,setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
   vm.runInContext(source,context);
   return {context,window,events,timers,
     html:()=>elements.get('#app').innerHTML,

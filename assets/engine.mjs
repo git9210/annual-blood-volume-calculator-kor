@@ -29,11 +29,13 @@ export function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00Z')-new
 // Personal deferrals affect eligibility only. They are never donations and never
 // alter inWindow(), stats(), releaseDate() or a previous donation's wait period.
 export const RESTRICTION_MAX_DAYS=3650;
-export function restrictionReasonUnits(value){return Array.from(value).reduce((sum,char)=>sum+(/[가-힣]/.test(char)?2:1),0);}
+// Korean letters include standalone jamo and intermediate IME composition.
+// Invisible Hangul fillers U+115F, U+1160 and U+3164 remain excluded.
+export function restrictionReasonUnits(value){return Array.from(value).reduce((sum,char)=>sum+(/[가-힣ㄱ-ㅣ\u1100-\u115e\u1161-\u11ff]/.test(char)?2:1),0);}
 export function normalizeRestrictionReason(value){
   if(typeof value!=='string')throw Error('헌혈금지사유를 확인해 주세요.');
   const reason=value.normalize('NFC').trim();
-  if(!/^[가-힣A-Za-z0-9 "'‘’“”?!()]*$/.test(reason))throw Error('한글·영문·숫자·공백·따옴표·물음표·느낌표·괄호만 입력할 수 있습니다.');
+  if(!/^[가-힣ㄱ-ㅣ\u1100-\u115e\u1161-\u11ffA-Za-z0-9 "'‘’“”?!()]*$/.test(reason))throw Error('한글(자음·모음 포함)·영문·숫자·공백·따옴표·물음표·느낌표·괄호만 입력할 수 있습니다.');
   if(restrictionReasonUnits(reason)>40)throw Error('한글 20자 또는 영문·숫자 40자 이내로 입력해 주세요. 혼합 입력은 비례 계산합니다.');
   return reason;
 }
@@ -51,10 +53,10 @@ export function activeRestrictions(date,restrictions=[]){return restrictions.fil
 export function weekday(s){return new Date(s+'T00:00:00Z').getUTCDay();}
 export function amount(e,rules=DEFAULT_RULES){return rules.volumes[e.type];}
 export function inWindow(e,date,rules=DEFAULT_RULES){const lower=yearStart(date);return e.date<=date&&(rules.boundary==='include'?e.date>=lower:e.date>lower);}
-export function stats(events,date,rules=DEFAULT_RULES){const entries=events.filter(e=>inWindow(e,date,rules));const used=entries.reduce((n,e)=>n+amount(e,rules),0);return {entries,used,remaining:rules.cap-used,whole:entries.filter(e=>e.type==='whole').length,components:entries.filter(e=>e.type!=='whole').length,start:rules.boundary==='include'?yearStart(date):addDays(yearStart(date),1),end:date};}
+export function stats(events,date,rules=DEFAULT_RULES){const lower=yearStart(date),include=rules.boundary==='include';const entries=events.filter(e=>e.date<=date&&(include?e.date>=lower:e.date>lower));const used=entries.reduce((n,e)=>n+amount(e,rules),0);return {entries,used,remaining:rules.cap-used,whole:entries.filter(e=>e.type==='whole').length,components:entries.filter(e=>e.type!=='whole').length,start:include?lower:addDays(lower,1),end:date};}
 export function assess(event,others,rules=DEFAULT_RULES,restrictions=[]){
-  const previous=others.filter(e=>e.date<event.date).sort((a,b)=>b.date.localeCompare(a.date))[0];
-  const recent=stats(others.filter(e=>e.date<=event.date),event.date,rules),issues=[];
+  let previous;for(const other of others)if(other.date<event.date&&(!previous||other.date>previous.date))previous=other;
+  const recent=stats(others,event.date,rules),issues=[];
   for(const item of activeRestrictions(event.date,restrictions))issues.push({code:'manual-restriction',text:`직접 등록한 헌혈 제한 · ${item.start} ~ ${item.end}${item.reason?' · '+item.reason:''}`});
   if(others.some(e=>e.date===event.date))issues.push({code:'duplicate',text:'같은 날짜에 다른 기록 또는 계획이 있습니다.'});
   if(previous){const next=addDays(previous.date,rules.waits[previous.type]);if(event.date<next)issues.push({code:'interval',text:`${previous.date} ${TYPES[previous.type].label} 이후 ${rules.waits[previous.type]}일 간격 필요 · ${next}부터`});}

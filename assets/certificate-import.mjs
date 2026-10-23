@@ -12,7 +12,7 @@ export function reviewCertificate(payload,records,plans,currentDate){
   const existing=new Map(records.map(row=>[row.date,row])),planned=new Map(plans.map(row=>[row.date,row])),seen=new Map();
   const allowedSources={whole:['전혈'],mixed:['혈소판혈장'],platelet:['혈소판'],plasma:['혈장']};
   const review=payload.rows.map((item,index)=>{
-    if(!item||!validDate(item.date)||item.date<'1900-01-01'||item.date>'2199-12-31'||!TYPES[item.type]||
+    if(!item||!validDate(item.date)||item.date<'1900-01-01'||item.date>'2199-12-31'||typeof item.type!=='string'||!Object.hasOwn(TYPES,item.type)||
       !allowedSources[item.type].includes(item.sourceType)||!Number.isInteger(item.page)||item.page<1||item.page>payload.pages)
       throw reviewError('invalid-row',`PDF의 ${index+1}번째 기록에서 날짜·헌혈 종류·쪽 정보를 확인하지 못했습니다. 원본 내용을 확인해 주세요.`);
     const row={index,date:item.date,type:item.type,sourceType:item.sourceType,page:item.page};

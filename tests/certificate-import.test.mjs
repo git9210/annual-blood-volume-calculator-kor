@@ -59,3 +59,13 @@ test('PDF review reports clock, row and future-date failures separately without 
   const wrongType=payload([row('2020-01-01','mixed','혈소판')]);
   assert.throws(()=>reviewCertificate(wrongType,[],[],today),error=>error.code==='invalid-row');
 });
+
+
+test('PDF review rejects inherited keys and array-valued types as invalid rows, without touching existing data',()=>{
+  const saved=state(),before=clone(saved);
+  for(const type of ['constructor','toString','__proto__',['whole']]){
+    const p=payload([row('2026-09-01',type,'전혈')]);
+    assert.throws(()=>reviewCertificate(p,saved.records,saved.plans,today),error=>error.code==='invalid-row');
+  }
+  assert.deepEqual(saved,before);
+});
