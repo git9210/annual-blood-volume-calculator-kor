@@ -183,7 +183,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.3.0/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.3.1/);
   assert.equal(h.requests.length,0);
 });
 
@@ -194,7 +194,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v2.3.0/);
+  assert.match(h.html(),/현재 v2.3.1/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -534,5 +534,92 @@ test('Legacy display settings default on; invalid values and failed writes canno
   h.click('delete-record',{id:'record-0'});h.click('settings');h.display('balanceHighlight',false);
   assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
   const reopened=h.relaunch();assert.deepEqual(reopened.read().displayOptions,{recordHighlight:false,balanceHighlight:false});
+  assert.equal(h.requests.length,0);
+});
+
+test('Red Connect calendar and plan switches independently control visible shortcuts and block hidden actions without changing data',()=>{
+  const initial={...fixture(2),startPage:'planner',displayOptions:{balanceHighlight:false,recordHighlight:false},
+    plans:[{id:'nearest',date:'2026-10-30',type:'plasma'},{id:'later',date:'2026-11-30',type:'mixed'}]};
+  const h=harness(0,{savedState:initial,hash:''});
+  let launches=0;h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;
+  const baseline=h.run('JSON.stringify(inspectPlan(state.records,state.plans,state.rules))');
+  for(const [calendar,plan] of [[true,true],[false,true],[false,false],[true,false],[true,true]]){
+    const before=launches;
+    h.click('settings');h.display('redConnectCalendar',calendar);h.display('redConnectPlan',plan);
+    assert.equal(launches,before,'changing a switch must not launch Red Connect');
+    for(const [key,enabled] of [['redConnectCalendar',calendar],['redConnectPlan',plan]]){
+      const input=h.html().match(new RegExp(`<input[^>]*id="display-${key}"[^>]*>`))[0];
+      assert.match(input,/role="switch"/);assert.equal(/\bchecked\b/.test(input),enabled);
+    }
+    h.click('planner');
+    assert.equal((h.html().match(/data-action="plan-red-connect"/g)||[]).length,plan?1:0);
+    assert.equal(h.html().includes('가장 가까운 예정 헌혈'),plan);
+    h.click('plan-red-connect',{id:'later'});assert.equal(launches,before);
+    h.click('plan-red-connect',{id:'nearest'});assert.equal(launches,before+Number(plan));
+    h.click('day',{date:'2026-10-30'});
+    const popup=h.elements.get('#dialog-content').innerHTML;
+    assert.equal(popup.includes('data-action="day-red-connect"'),calendar);
+    assert.equal(popup.includes('저장된 계획의 예약을 레드커넥트에서'),calendar);
+    h.click('day-red-connect');assert.equal(launches,before+Number(plan)+Number(calendar));
+    h.click('close-dialog');
+    for(const date of ['2026-10-17','2020-01-01']){
+      h.click('day',{date});assert.doesNotMatch(h.elements.get('#dialog-content').innerHTML,/day-red-connect/);
+      const count=launches;h.click('day-red-connect');assert.equal(launches,count);h.click('close-dialog');
+    }
+    assert.equal(h.run('JSON.stringify(inspectPlan(state.records,state.plans,state.rules))'),baseline);
+    const {displayOptions,...saved}=h.read();const {displayOptions:oldOptions,...original}=initial;
+    assert.deepEqual(saved,original);
+    for(const [key,enabled] of Object.entries(oldOptions))assert.equal(displayOptions[key],enabled);
+  }
+  assert.equal(h.requests.length,0);assert.equal(h.prompts.length,0);
+});
+
+test('Red Connect shortcut choices survive relaunch, encrypted backup restoration and record undo',async()=>{
+  const initial={...fixture(2),startPage:'planner',plans:[{id:'nearest',date:'2026-10-30',type:'plasma'}]};
+  const h=harness(0,{savedState:initial});h.click('settings');
+  h.display('redConnectCalendar',false);h.display('redConnectPlan',false);const saved=h.read();
+  const assertHidden=app=>{
+    app.click('planner');assert.doesNotMatch(app.html(),/plan-red-connect/);
+    app.click('day',{date:'2026-10-30'});assert.doesNotMatch(app.elements.get('#dialog-content').innerHTML,/day-red-connect/);
+    app.click('close-dialog');
+  };
+  const reopened=h.relaunch();assert.deepEqual(reopened.read(),saved);assertHidden(reopened);
+  h.click('export-backup');await h.password('valid-test-password');const encrypted=h.exports[0].text;
+  assert.doesNotMatch(encrypted,/redConnectCalendar|redConnectPlan/);
+  assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),saved);
+  h.display('redConnectCalendar',true);h.display('redConnectPlan',true);
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),saved);assertHidden(h);
+  h.click('delete-record',{id:'record-0'});h.run('undoAction()');assert.deepEqual(h.read(),saved);
+  assertHidden(h.relaunch());assert.equal(h.requests.length+reopened.requests.length,0);
+});
+
+test('Old backups default to both Red Connect shortcuts on and failed or demo setting writes preserve saved choices',()=>{
+  for(const displayOptions of [undefined,null,[],{recordHighlight:false},{redConnectCalendar:'false',redConnectPlan:0}]){
+    const initial={...fixture(2),displayOptions};const h=harness(0,{savedState:initial});
+    assert.equal(h.run('storageFailed'),false);
+    for(const key of ['redConnectCalendar','redConnectPlan'])assert.equal(h.run(`displayEnabled('${key}')`),true);
+    const {displayOptions:loadedOptions,...saved}=h.read();const {displayOptions:oldOptions,...original}=initial;
+    assert.deepEqual(saved,original);
+    assert.deepEqual(loadedOptions,oldOptions?.recordHighlight===false?{recordHighlight:false}:undefined);
+    assert.equal(h.requests.length,0);
+  }
+  const h=harness(2);h.click('settings');h.display('redConnectCalendar',false);const saved=h.read();
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};
+  h.display('redConnectPlan',false);h.display('redConnectCalendar',true);
+  assert.deepEqual(h.read(),saved);
+  assert.equal(h.run("displayEnabled('redConnectCalendar')"),false);
+  assert.equal(h.run("displayEnabled('redConnectPlan')"),true);
+  assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  h.storage.setItem=write;h.click('demo');h.click('settings');
+  for(const key of ['redConnectCalendar','redConnectPlan']){
+    assert.match(h.html(),new RegExp(`data-display-option="${key}"[^>]*disabled`));
+    h.display(key,false);
+  }
+  h.click('demo');assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.display('redConnectPlan',false);
+  assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
+  assert.deepEqual(h.relaunch().read().displayOptions,{redConnectCalendar:false,redConnectPlan:false});
   assert.equal(h.requests.length,0);
 });
