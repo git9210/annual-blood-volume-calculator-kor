@@ -38,20 +38,14 @@ function harness(initial=blank(),currentDate='2026-10-18'){
     check:(i,checked)=>events['#dialog:change']({target:{dataset:{certificateIndex:String(i)},checked}}),
     ready:p=>window.bloodNoteCertificateEvent('ready',p)};
 }
-test('Top add button offers exactly manual and PDF choices; choosing, cancelling and backing out do not write records',()=>{
+test('The date header has no add button; the record actions retain manual entry and cancellable PDF import',()=>{
   const h=harness(),before=h.read();
-  for(const page of ['dashboard','planner','records','settings']){
-    h.run(`setPage('${page}')`);h.elements.get('#quick-add').onclick();
-    assert.match(h.html(),/>직접 입력</);assert.match(h.html(),/>증명서 PDF 등록</);
-    assert.equal((h.html().match(/class="record-entry-option"/g)||[]).length,2);
-    assert.doesNotMatch(h.html(),/id="event-form"/);assert.equal(h.picks(),0);
-    h.click('close-dialog');assert.deepEqual(h.read(),before);
-  }
-  h.elements.get('#quick-add').onclick();h.click('add-record');
+  assert.equal(h.elements.has('#quick-add'),false);
+  for(const page of ['dashboard','planner','records','settings']){h.run(`setPage('${page}')`);assert.deepEqual(h.read(),before);}
+  h.run("setPage('records')");h.click('add-record');
   assert.match(h.html(),/id="event-form"/);assert.match(h.html(),/기록 저장/);
   assert.equal(h.picks(),0);assert.deepEqual(h.read(),before);h.click('close-dialog');
-  h.elements.get('#quick-add').onclick();h.click('import-certificate');
-  assert.equal(h.picks(),1);assert.match(h.html(),/파일 선택을 기다리고/);
+  h.click('import-certificate');assert.equal(h.picks(),1);assert.match(h.html(),/파일 선택을 기다리고/);
   h.window.bloodNoteCertificateEvent('cancelled',{});
   assert.equal(h.elements.get('#dialog').open,false);assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LAYOUT_WIDGETS,layoutOrder,validateScreenLayouts,shiftLayout,insertLayoutBefore,layoutSpans} from '../assets/screen-layout.mjs';
+import {LAYOUT_WIDGETS,layoutOrder,validateScreenLayouts,hiddenWidgetIds,validateScreenHidden,shiftLayout,insertLayoutBefore,layoutSpans} from '../assets/screen-layout.mjs';
 
 test('Layouts normalize old/malformed settings without accepting unknown IDs or losing available widgets',()=>{
   const defaults=LAYOUT_WIDGETS.dashboard.map(item=>item.id);
@@ -9,6 +9,16 @@ test('Layouts normalize old/malformed settings without accepting unknown IDs or 
   assert.deepEqual(clean.dashboard.slice(0,2),['recent','next']);assert.equal(clean.dashboard.length,defaults.length);
   assert.equal(new Set(clean.dashboard).size,defaults.length);assert.equal(clean.planner[0],'annual');
   assert.equal(Object.hasOwn(clean,'__proto__'),false);assert.deepEqual(layoutOrder('constructor',clean),[]);
+});
+test('Hidden widgets default to visible and retain only unique known IDs from bounded per-page arrays',()=>{
+  for(const raw of [undefined,null,1,'bad',[],{dashboard:null},{dashboard:Array(33).fill('next')}])assert.deepEqual(validateScreenHidden(raw),{});
+  const raw=JSON.parse('{"dashboard":["balance","<script>","balance",null,"next"],"planner":["calendar","next"],"__proto__":{"planner":["annual"]}}');
+  const before=JSON.stringify(raw),clean=validateScreenHidden(raw);
+  assert.deepEqual(clean,{dashboard:['balance','next'],planner:['calendar']});
+  assert.deepEqual(hiddenWidgetIds('dashboard',clean),['balance','next']);
+  assert.deepEqual(hiddenWidgetIds('records',clean),[]);assert.deepEqual(hiddenWidgetIds('constructor',clean),[]);
+  assert.equal(Object.hasOwn(clean,'__proto__'),false);assert.equal(JSON.stringify(raw),before);
+  assert.deepEqual(validateScreenHidden({dashboard:[],planner:layoutOrder('planner')}),{dashboard:[],planner:['calendar','plans','restrictions','annual']});
 });
 test('Arrow moves and drag insertion are immutable, bounded and retain every widget exactly once',()=>{
   const original=layoutOrder('planner'),copy=[...original];

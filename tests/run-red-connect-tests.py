@@ -125,6 +125,7 @@ public class RedConnectLauncherTest {
         launcher.request(); AlertDialog first = AlertDialog.last;
         check(first.visible && app.launched == 0);
         check(first.message.contains("데이터 요금") && first.message.contains("전달하지 않습니다"));
+        check(first.message.contains("증명서 발급") && first.message.contains("시작 화면"));
         check(first.positiveLabel.equals("확인 후 실행"));
         launcher.request(); check(AlertDialog.last == first && app.packages.queries == 1);
         first.negative.onClick(first, 0); check(!first.visible && app.launched == 0);

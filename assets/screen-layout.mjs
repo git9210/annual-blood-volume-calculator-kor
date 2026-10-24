@@ -30,6 +30,19 @@ export function validateScreenLayouts(raw){
   }
   return clean;
 }
+export function hiddenWidgetIds(page,hidden){
+  const known=new Set((Object.hasOwn(LAYOUT_WIDGETS,page)?LAYOUT_WIDGETS[page]:[]).map(item=>item.id));
+  const raw=hidden?.[page];
+  return Array.isArray(raw)&&raw.length<=32?[...new Set(raw.filter(id=>typeof id==='string'&&known.has(id)))]:[];
+}
+export function validateScreenHidden(raw){
+  const clean={};
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return clean;
+  for(const page of Object.keys(LAYOUT_WIDGETS)){
+    if(Object.hasOwn(raw,page)&&Array.isArray(raw[page])&&raw[page].length<=32)clean[page]=hiddenWidgetIds(page,raw);
+  }
+  return clean;
+}
 export function insertLayoutBefore(order,id,beforeId){
   if(!order.includes(id)||id===beforeId||beforeId!==null&&!order.includes(beforeId))return [...order];
   const result=order.filter(key=>key!==id),position=beforeId===null?result.length:result.indexOf(beforeId);

@@ -31,7 +31,8 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
   form.querySelector=()=>({disabled:false});form.reset=()=>{form.elements.password.value='';form.elements.confirm.value='';};
   const cache=new Map([['blood-note-v1',JSON.stringify(initial)]]);
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
-  const document={querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn,removeEventListener(){}};
+  const body={attributes:{},setAttribute(key,value){this.attributes[key]=value;}};
+  const document={body,querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn,removeEventListener(){}};
   const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,removeEventListener(){},scrollTo(){},BloodNoteAndroid:{
     requestHolidayConsent:id=>prompts.push(id),finishHolidayRefresh:id=>finished.push(id),saveText:(name,mime,text)=>exports.push({name,mime,text})}};
   const payload=engine.clone(HOLIDAY_SNAPSHOT.years);payload[2026]['2026-10-20']=['임시공휴일 테스트'];
@@ -43,13 +44,14 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
     setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:()=>1,cancelAnimationFrame(){}});
   vm.runInContext(source,context);
   const run=code=>vm.runInContext(code,context);
-  return {initial,events,elements,prompts,finished,requests,exports,window,run,storage,timers,
+  return {initial,events,elements,prompts,finished,requests,exports,window,run,storage,timers,body,
     setToday:value=>{currentDate=value;run('refreshLocalDay()');},
     relaunch:(hash='')=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate,hash}),
     html:()=>elements.get('#app').innerHTML,read:()=>JSON.parse(storage.getItem('blood-note-v1')),
     ids:()=>[...elements.get('#app').innerHTML.matchAll(/data-action="edit-record" data-id="([^"]+)"/g)].map(match=>match[1]),
     click:(action,data={})=>{const button={dataset:{action,...data},disabled:false};events['document:click']({target:{closest:selector=>selector==='[data-action]'?button:null},preventDefault(){}});},
     change:(id,value)=>events['#app:change']({target:{id,value,dataset:{}}}),
+    theme:value=>events['#app:change']({target:{value,checked:true,matches:selector=>selector==='[data-theme-option]',dataset:{}}}),
     display:(key,checked)=>events['#app:change']({target:{id:'display-'+key,checked,dataset:{displayOption:key}}}),
     password:async(value,confirm=value)=>{form.elements.password.value=value;form.elements.confirm.value=confirm;await events['#backup-password-form:submit']({preventDefault(){}});},
     consent:(allowed,id=prompts.at(-1))=>window.bloodNoteHolidayConsent(id,allowed),
@@ -57,6 +59,114 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
   };
 }
 
+test('Calendar avoids unused eligibility work for past/completed/restricted cells, retaining labels and saved data',()=>{
+  const initial={...fixture(0),records:[{id:'done',date:'2026-10-18',type:'platelet'}],
+    plans:[{id:'past-plan',date:'2026-10-10',type:'plasma'},{id:'next-plan',date:'2026-10-25',type:'plasma'}],
+    restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-21',reason:'薬 / test'}]};
+  const h=harness(0,{savedState:initial,hash:'#records'}),before=h.read();
+  h.run('let eligibilityCalls=0;const originalAvailability=availabilityForDate,originalSimulate=simulate;availabilityForDate=(...args)=>{eligibilityCalls+=4;return originalAvailability(...args);};simulate=(...args)=>{eligibilityCalls++;return originalSimulate(...args);};');
+  const past=h.run("calendarHTML('month',calendarWindow('2026-09-01','month'))");
+  assert.equal(h.run('eligibilityCalls'),0);assert.match(past,/>과거</);assert.doesNotMatch(past,/can-donate/);
+  const current=h.run("calendarHTML('month',calendarWindow('2026-10-01','month'))");
+  // Future cells 19 and 22–31 need eligibility; today's completed cell and 20–21 do not.
+  assert.equal(h.run('eligibilityCalls'),44);
+  assert.match(current,/data-calendar-date="2026-10-18"[^>]*highlighted-record/);
+  assert.match(current,/completed-record[^>]*data-type="platelet"[^]*?<strong>완료<\/strong>/);
+  assert.match(current,/data-calendar-date="2026-10-20"[^>]*manually-restricted/);
+  assert.match(current,/data-calendar-date="2026-10-25"[^>]*planned/);
+  assert.match(current,/chosen-plan[^>]*data-type="plasma"/);
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+test('A restricted calendar date still calculates complete volume and reasons when its popup is opened',()=>{
+  const initial={...fixture(0),records:[{id:'last',date:'2026-09-01',type:'whole'}],
+    restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-21',reason:'약 복용'}]};
+  const h=harness(0,{savedState:initial,hash:'#records'}),before=h.read();
+  h.run('let eligibilityCalls=0;const originalAvailability=availabilityForDate;availabilityForDate=(...args)=>{eligibilityCalls++;return originalAvailability(...args);};');
+  const cell=h.run("calendarHTML('month',{offset:0,dates:['2026-10-20']})");
+  assert.equal(h.run('eligibilityCalls'),0);assert.equal((cell.match(/<strong>제한<\/strong>/g)||[]).length,4);
+  h.click('day',{date:'2026-10-20'});h.click('day-type',{type:'plasma'});
+  assert.ok(h.run('eligibilityCalls')>0);
+  const popup=h.elements.get('#dialog-content').innerHTML;
+  assert.match(popup,/계획 후 연간 계산량/);assert.match(popup,/475/);assert.match(popup,/1,685/);
+  assert.match(popup,/약 복용/);assert.match(popup,/간격 필요/);
+  assert.match(popup,/제한 있는 가정으로 저장/);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+test('Three offline themes save from the settings radio group and preserve all user data across relaunch',()=>{
+  const h=harness(),before=h.read();
+  assert.equal(h.body.attributes['data-theme'],'initial');assert.equal(h.read().theme,undefined);
+  h.click('settings');
+  assert.match(h.html(),/role="radiogroup" aria-labelledby="theme-title"/);
+  assert.deepEqual([...h.html().matchAll(/data-theme-option value="([^"]+)"/g)].map(m=>m[1]),['blood','pastel','initial']);
+  for(const theme of ['blood','pastel','initial']){
+    h.theme(theme);assert.equal(h.body.attributes['data-theme'],theme);assert.equal(h.read().theme,theme);
+    assert.match(h.html(),new RegExp(`data-theme-option value="${theme}" checked`));
+    const stored=h.read();delete stored.theme;assert.deepEqual(stored,before);
+    for(const page of ['dashboard','planner','records','settings']){h.click(page);assert.equal(h.body.attributes['data-theme'],theme);}
+    const restarted=h.relaunch();assert.equal(restarted.body.attributes['data-theme'],theme);assert.deepEqual(restarted.read(),h.read());
+  }
+  assert.equal(h.requests.length,0);
+});
+test('Theme input is allowlisted; failed writes and demo mode preserve the saved theme',()=>{
+  const h=harness();h.theme('blood');const before=h.read();
+  for(const theme of ['__proto__','constructor','<img src=x>',null,{},['blood']]){
+    h.theme(theme);assert.deepEqual(h.read(),before);assert.equal(h.body.attributes['data-theme'],'blood');
+  }
+  h.storage.setItem=()=>{throw Error('full');};h.theme('pastel');
+  assert.deepEqual(h.read(),before);assert.equal(h.body.attributes['data-theme'],'blood');
+  const demo=h.relaunch();demo.click('demo');demo.click('settings');
+  assert.match(demo.html(),/data-theme-option value="blood" checked disabled/);
+  demo.theme('pastel');assert.deepEqual(demo.read(),before);assert.equal(demo.body.attributes['data-theme'],'blood');
+  demo.click('demo');assert.equal(demo.body.attributes['data-theme'],'blood');
+  assert.equal(demo.requests.length,0);
+});
+test('Theme is included in encrypted backups; old or invalid-theme backups keep the current choice',async()=>{
+  const h=harness();h.theme('pastel');const before=h.read();
+  h.click('export-backup');await h.password('theme-backup-test');
+  const encrypted=JSON.parse(h.exports.at(-1).text),restored=await backupCrypto.decryptBackup(encrypted,'theme-backup-test');
+  assert.equal(JSON.parse(restored).theme,'pastel');
+  h.theme('blood');h.run(`confirmBackupRestore(validateState(${restored}))`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),before);assert.equal(h.body.attributes['data-theme'],'pastel');
+  for(const value of [undefined,'invalid','__proto__',[]]){
+    const backup={...before};if(value===undefined)delete backup.theme;else backup.theme=value;
+    h.run(`confirmBackupRestore(validateState(${JSON.stringify(backup)}))`);h.elements.get('#confirm-restore').onclick();
+    assert.deepEqual(h.read(),before);assert.equal(h.body.attributes['data-theme'],'pastel');
+  }
+  assert.equal(h.requests.length,0);
+});
+test('Blood red becomes progressively darker from 39 to 430 mL and every shade has readable text',()=>{
+  const h=harness();
+  const luminance=rgb=>rgb.map(v=>v/255).reduce((sum,v,i)=>sum+[.2126,.7152,.0722][i]*(v<=.04045?v/12.92:((v+.055)/1.055)**2.4),0);
+  const parse=color=>color.startsWith('rgb')?color.match(/\d+/g).map(Number):color.slice(1).match(/../g).map(v=>parseInt(v,16));
+  let previous=1,minimum=Infinity;
+  for(let remaining=39;remaining<=430;remaining+=.25){
+    const palette=h.run(`bloodBalancePalette(${remaining})`),background=luminance(parse(palette.surface)),foreground=luminance(parse(palette.ink));
+    assert.ok(background<=previous,`Intensity must increase at ${remaining} mL`);previous=background;
+    const contrast=(Math.max(background,foreground)+.05)/(Math.min(background,foreground)+.05);
+    minimum=Math.min(minimum,contrast);assert.ok(contrast>=4.5,`Contrast ${contrast} at ${remaining} mL`);
+  }
+  assert.equal(h.run('bloodBalancePalette(39).surface'),'rgb(255,240,238)');
+  assert.equal(h.run('bloodBalancePalette(430).surface'),'rgb(177,37,66)');
+  assert.equal(h.run('bloodBalancePalette(-100).surface'),h.run('bloodBalancePalette(39).surface'));
+  assert.equal(h.run('bloodBalancePalette(2160).surface'),h.run('bloodBalancePalette(430).surface'));
+  assert.equal(h.run('bloodBalancePalette(NaN).surface'),h.run('bloodBalancePalette(39).surface'));
+  h.click('dashboard');h.theme('blood');assert.match(h.html(),/--balance-surface:rgb\(/);
+  const saved=h.read();h.display('balanceHighlight',false);assert.doesNotMatch(h.html(),/--balance-surface:rgb\(|class="balance-status"/);
+  h.display('balanceHighlight',true);assert.match(h.html(),/--balance-surface:rgb\(/);assert.deepEqual(h.read().rules,saved.rules);
+  assert.deepEqual(h.read().records,saved.records);assert.equal(h.requests.length,0);
+});
+test('Changing themes keeps calendar status, restrictions, completed markers and layout preferences intact',()=>{
+  const savedState={...fixture(0),records:[{id:'recent',date:'2026-10-01',type:'plasma'}],plans:[{id:'future',date:'2026-10-26',type:'plasma'}],
+    restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-21',reason:'薬 / test'}],screenHidden:{dashboard:['recent']},screenLayouts:{planner:['plans','calendar','restrictions','annual']}};
+  const h=harness(0,{savedState,hash:'#planner'}),baseline=h.html();
+  assert.match(baseline,/highlighted-record/);assert.match(baseline,/manually-restricted/);
+  for(const theme of ['blood','pastel','initial']){
+    h.theme(theme);assert.equal(h.html(),baseline);
+    h.click('dashboard');assert.doesNotMatch(h.html(),/data-layout-id="recent"/);
+    h.click('planner');assert.equal(h.html(),baseline);
+    const persisted=h.read();delete persisted.theme;assert.deepEqual(persisted,savedState);
+  }
+  assert.equal(h.requests.length,0);
+});
 test('Dashboard always uses today after relaunch and Korean midnight, without changing records or using network',()=>{
   const h=harness();h.click('dashboard');const saved=h.read();
   assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls|잔여량 계산 기준일/);
@@ -66,7 +176,8 @@ test('Dashboard always uses today after relaunch and Korean midnight, without ch
   let reopened=h.relaunch();reopened.click('dashboard');
   assert.equal(reopened.run('anchorDate()'),'2026-10-18');
   reopened.setToday('2026-10-19');assert.equal(reopened.run('anchorDate()'),'2026-10-19');
-  assert.match(reopened.html(),/2026\. 10\. 19\. 월요일 기준/);
+  assert.doesNotMatch(reopened.html(),/2026\. 10\. 19\. 월요일 기준/);
+  assert.match(reopened.html(),/2025-10-20 ~ 2026-10-19/);
   assert.equal(reopened.elements.get('#date-label').textContent,'2026. 10. 19. 월요일');
   reopened.click('settings');reopened.setToday('2026-10-20');
   assert.equal(reopened.elements.get('#date-label').textContent,'2026. 10. 20. 화요일');
@@ -136,9 +247,9 @@ test('Encrypted and legacy backups restore records while previous date preferenc
 });
 
 test('Restriction reasons/dates survive encrypted export, restoration and relaunch with existing settings and records',async()=>{
-  const saved={...fixture(4),startPage:'planner',displayOptions:{redConnectCalendar:false,balanceHighlight:false},restrictions:[{id:'restriction',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}]};
+  const saved={...fixture(4),startPage:'planner',displayOptions:{redConnectCalendar:false,balanceHighlight:false},restrictions:[{id:'restriction',start:'2026-10-23',end:'2026-11-05',reason:'약 / 药 & <b>café</b> № 2'}]};
   const h=harness(0,{savedState:saved});h.click('export-backup');await h.password('valid-test-password');
-  const encrypted=h.exports[0].text;assert.doesNotMatch(encrypted,/약 복용|2026-10-23/);
+  const encrypted=h.exports[0].text;assert.doesNotMatch(encrypted,/café|药|2026-10-23/);
   assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),saved);
   h.run('change(()=>{state.restrictions=[];})');assert.deepEqual(h.read().restrictions,[]);
   await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
@@ -200,7 +311,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 2.6.2/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 3.0.1/);
   assert.equal(h.requests.length,0);
 });
 
@@ -211,7 +322,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v2.6.2/);
+  assert.match(h.html(),/현재 v3.0.1/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -262,12 +373,12 @@ test('Each approval permits one refresh, repeat taps do not queue requests, and 
 });
 
 
-test('Plan/record notices expire after exactly three seconds and discard the undo action',()=>{
+test('Plan/record notices expire after exactly two seconds and discard the undo action',()=>{
   const h=harness(1);h.click('delete-record',{id:'record-0'});
-  const timer=h.timers.get(h.run('toastTimer'));assert.equal(timer.delay,3000);
+  const timer=h.timers.get(h.run('toastTimer'));assert.equal(timer.delay,2000);
   assert.equal(typeof h.run('undoAction'),'function');timer.fn();assert.equal(h.run('undoAction'),null);
   assert.equal(h.read().records.length,0);
-  h.run("toast('계획을 추가했습니다.',()=>{})");assert.equal(h.timers.get(h.run('toastTimer')).delay,3000);
+  h.run("toast('계획을 추가했습니다.',()=>{})");assert.equal(h.timers.get(h.run('toastTimer')).delay,2000);
 });
 
 test('Encrypted backup UI exports all 201 records and requires password plus confirmation to restore',async()=>{
@@ -469,7 +580,7 @@ test('Balance colors and text switch at 45, 90 and 430 mL; zero/negative balance
     const initial={...fixture(0),rules:{...engine.clone(engine.DEFAULT_RULES),cap:45+remaining},records:[{id:'test',date:'2026-09-01',type:'plasma'}]};
     const h=harness(0,{savedState:initial,hash:''});
     assert.match(h.html(),new RegExp(`balance-card balance-${tone}`));assert.doesNotMatch(h.html(),/balance-band-label|mL 구간/);
-    assert.match(h.html(),/계산량 기준 · 간격·횟수 조건은 별도로 확인/);
+    assert.doesNotMatch(h.html(),/계산량 기준 · 간격·횟수 조건은 별도로 확인/);
     assert.deepEqual(h.read(),initial);assert.equal(h.requests.length,0);
   }
   const empty=harness(0,{hash:''});assert.match(empty.html(),/balance-card balance-empty/);
@@ -480,7 +591,7 @@ test('Volume text respects custom calculation settings and never treats volume a
   const initial={...fixture(0),rules:{...engine.clone(engine.DEFAULT_RULES),cap:169,volumes:{whole:500,plasma:50,platelet:100,mixed:120}},records:[{id:'today',date:'2026-10-18',type:'plasma'}]};
   const h=harness(0,{savedState:initial,hash:''});
   assert.match(h.html(),/balance-card balance-component/);assert.match(h.html(),/계산량 충족: 혈장 · 혈소판<\/p>/);
-  assert.match(h.html(),/간격·횟수 조건은 별도로/);assert.doesNotMatch(h.html(),/오늘부터 계산 조건 충족/);
+  assert.doesNotMatch(h.html(),/간격·횟수 조건은 별도로|오늘부터 계산 조건 충족/);
   h.run('state.rules.cap=170;render()');assert.doesNotMatch(h.html(),/balance-band-label|mL 구간/);
   assert.match(h.html(),/계산량 충족: 혈장 · 혈소판 · 혈소판 혈장/);
   assert.deepEqual(h.read(),initial);assert.equal(h.requests.length,0);
@@ -570,7 +681,7 @@ test('Red Connect calendar and plan switches independently control visible short
     }
     h.click('planner');
     assert.equal((h.html().match(/data-action="plan-red-connect"/g)||[]).length,plan?1:0);
-    assert.equal(h.html().includes('가장 가까운 예정 헌혈'),plan);
+    assert.doesNotMatch(h.html(),/가장 가까운 예정 헌혈|예약은 레드커넥트에서 진행하세요/);
     h.click('plan-red-connect',{id:'later'});assert.equal(launches,before);
     h.click('plan-red-connect',{id:'nearest'});assert.equal(launches,before+Number(plan));
     h.click('day',{date:'2026-10-30'});
@@ -655,7 +766,7 @@ test('Screen editing is offered only on the two editable pages and requires curr
 test('Draft widget moves never save records; cancel/back restore order and each page saves independently across restart',()=>{
   const h=harness(3),before=h.read(),ids=()=>[...h.html().matchAll(/data-layout-id="([^"]+)"/g)].map(m=>m[1]);
   h.click('dashboard');const original=ids();h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});
-  assert.equal(h.elements.get('#layout-toolbar').hidden,false);assert.equal(h.elements.get('#quick-add').hidden,true);
+  assert.equal(h.elements.get('#layout-toolbar').hidden,false);assert.equal(h.elements.has('#quick-add'),false);
   h.click('layout-up',{id:'recent'});assert.notDeepEqual(ids(),original);assert.deepEqual(h.read(),before);
   h.click('layout-cancel');assert.deepEqual(ids(),original);assert.deepEqual(h.read(),before);
   h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'balance'});
@@ -728,6 +839,99 @@ test('Encrypted backups retain both saved layouts; restoring an old backup prese
   assert.deepEqual(h.relaunch().read().screenLayouts,saved.screenLayouts);assert.equal(h.requests.length,0);
 });
 
+const visibleWidgetIds=html=>[...html.matchAll(/data-layout-id="([^"]+)"/g)].map(match=>match[1]);
+const hiddenWidgetIdsInHTML=html=>[...html.matchAll(/data-hidden-layout-id="([^"]+)"/g)].map(match=>match[1]);
+test('Minus hides draft items below the draggable list, plus restores them at the end, and cancel/back discard both changes',()=>{
+  for(const view of ['dashboard','planner']){
+    const h=harness(2,{hash:'#'+view}),before=h.read(),original=visibleWidgetIds(h.html()),id=original[0];
+    h.click('layout-request');h.click('layout-begin',{layoutPage:view});h.click('layout-hide',{id});
+    assert.deepEqual(visibleWidgetIds(h.html()),original.slice(1));assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),[id]);
+    assert.ok(h.html().indexOf('layout-hidden-panel')>h.html().lastIndexOf('data-layout-id='));
+    assert.match(h.html(),new RegExp(`data-action="layout-show" data-id="${id}"`));assert.deepEqual(h.read(),before);
+    h.click('layout-hide',{id});h.click('layout-hide',{id:'<script>'});assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),[id]);
+    h.click('layout-show',{id});assert.deepEqual(visibleWidgetIds(h.html()),[...original.slice(1),id]);assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),[]);
+    h.click('layout-show',{id});assert.deepEqual(visibleWidgetIds(h.html()),[...original.slice(1),id]);
+    h.click('layout-hide',{id});h.click('layout-cancel');assert.deepEqual(visibleWidgetIds(h.html()),original);assert.deepEqual(h.read(),before);
+    h.click('layout-request');h.click('layout-begin',{layoutPage:view});h.click('layout-hide',{id});
+    assert.equal(h.window.bloodNoteHandleBack(),true);assert.deepEqual(visibleWidgetIds(h.html()),original);assert.deepEqual(h.read(),before);
+    assert.equal(h.requests.length,0);
+  }
+});
+test('Hidden items cannot enter arrow/drag targets, and saving each page keeps its visibility across restart without changing data',()=>{
+  const saved={...fixture(3),startPage:'planner',displayOptions:{redConnectCalendar:false},restrictions:[{id:'pause',start:'2026-10-18',end:'2026-10-19',reason:'약 / 药'}]};
+  const h=harness(3,{savedState:saved,hash:'#dashboard'}),before=h.read();
+  h.click('layout-hide',{id:'balance'});assert.deepEqual(h.read(),before);
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-hide',{id:'next'});
+  const order=visibleWidgetIds(h.html());h.click('layout-up',{id:'next'});h.run("moveScreenWidget('recent',0,'next')");assert.deepEqual(visibleWidgetIds(h.html()),order);
+  h.click('layout-down',{id:'balance'});assert.equal(visibleWidgetIds(h.html())[0],'whole-count');h.click('layout-save');
+  assert.deepEqual(h.read().screenHidden.dashboard,['next']);assert.doesNotMatch(h.html(),/data-layout-id="next"/);
+  assert.match(h.html(),/등록한 헌혈 제한이 적용 중/);
+  h.click('planner');h.click('layout-request');h.click('layout-begin',{layoutPage:'planner'});h.click('layout-hide',{id:'calendar'});h.click('layout-save');
+  assert.deepEqual(h.read().screenHidden,{dashboard:['next'],planner:['calendar']});assert.doesNotMatch(h.html(),/class="calendar-card"|data-calendar-date=/);
+  const reopened=h.relaunch();assert.equal(reopened.run('page'),'planner');assert.deepEqual(reopened.read().screenHidden,h.read().screenHidden);
+  assert.doesNotMatch(reopened.html(),/data-layout-id="calendar"/);reopened.click('dashboard');assert.doesNotMatch(reopened.html(),/data-layout-id="next"/);
+  const {screenLayouts,screenHidden,...rest}=h.read();assert.deepEqual(rest,before);assert.equal(h.requests.length+reopened.requests.length,0);
+});
+test('A failed visibility save keeps the previous saved state and the draft can be retried',()=>{
+  const saved={...fixture(2),screenHidden:{dashboard:['recent'],planner:['annual']}},h=harness(2,{savedState:saved,hash:'#dashboard'}),before=h.read();
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-show',{id:'recent'});h.click('layout-hide',{id:'next'});
+  const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-save');
+  assert.deepEqual(h.read(),before);assert.ok(h.run('screenEditor'));assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),['next']);
+  h.storage.setItem=write;h.click('layout-save');assert.equal(h.run('screenEditor'),null);
+  assert.deepEqual(h.read().screenHidden,{dashboard:['next'],planner:['annual']});assert.deepEqual(h.read().records,before.records);
+  assert.deepEqual(h.relaunch().read(),h.read());assert.equal(h.requests.length,0);
+});
+test('All widgets may be hidden while editing and restoration remain available on both screens',()=>{
+  for(const view of ['dashboard','planner']){
+    const h=harness(1,{hash:'#'+view}),before=h.read(),ids=visibleWidgetIds(h.html());
+    h.click('layout-request');h.click('layout-begin',{layoutPage:view});for(const id of ids)h.click('layout-hide',{id});
+    assert.deepEqual(visibleWidgetIds(h.html()),[]);assert.equal(hiddenWidgetIdsInHTML(h.html()).length,ids.length);
+    h.click('layout-save');assert.match(h.html(),/표시 중인 항목이 없습니다/);assert.deepEqual(visibleWidgetIds(h.html()),[]);
+    assert.equal(h.elements.get('#layout-toggle').hidden,false);assert.equal(h.elements.has('#quick-add'),false);
+    const reopened=h.relaunch();reopened.click(view);assert.deepEqual(visibleWidgetIds(reopened.html()),[]);
+    reopened.click('layout-request');reopened.click('layout-begin',{layoutPage:view});assert.equal(hiddenWidgetIdsInHTML(reopened.html()).length,ids.length);
+    reopened.click('layout-show',{id:ids[0]});reopened.click('layout-save');assert.deepEqual(visibleWidgetIds(reopened.html()),[ids[0]]);
+    assert.deepEqual(reopened.read().records,before.records);assert.deepEqual(reopened.read().plans,before.plans);
+    assert.equal(h.requests.length+reopened.requests.length,0);
+  }
+});
+test('Visibility survives encrypted export/restore, and a legacy backup preserves the current hidden choices',async()=>{
+  const saved={...fixture(2),screenLayouts:{planner:['annual','calendar','plans','restrictions']},screenHidden:{dashboard:['next','recent'],planner:['calendar']}};
+  const h=harness(2,{savedState:saved});h.click('export-backup');await h.password('valid-test-password');
+  const encrypted=h.exports[0].text;assert.doesNotMatch(encrypted,/screenHidden|screenLayouts/);
+  assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),saved);
+  h.run('change(()=>{state.screenHidden={dashboard:[]};})');
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),saved);assert.deepEqual(h.relaunch().read(),saved);
+  const legacy=fixture(1);await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(JSON.stringify(legacy))}})`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read().screenHidden,saved.screenHidden);assert.deepEqual(h.read().screenLayouts,saved.screenLayouts);assert.deepEqual(h.read().records,legacy.records);
+  assert.equal(h.requests.length,0);
+});
+test('Confirmed default reset shows all widgets on that screen only, and failed reset or cancellation preserves hidden choices',()=>{
+  const saved={...fixture(2),screenHidden:{dashboard:['balance','next'],planner:['calendar']},screenLayouts:{dashboard:screenLayout.layoutOrder('dashboard').reverse(),planner:screenLayout.layoutOrder('planner').reverse()}};
+  const h=harness(2,{savedState:saved,hash:'#dashboard'}),before=h.read();h.click('layout-request');h.click('layout-reset-request',{layoutPage:'dashboard'});
+  assert.match(h.elements.get('#dialog-content').innerHTML,/숨긴 항목도 다시 표시/);h.click('layout-reset-cancel',{layoutPage:'dashboard'});assert.deepEqual(h.read(),before);
+  h.click('layout-reset-request',{layoutPage:'dashboard'});const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-reset-confirm',{layoutPage:'dashboard'});assert.deepEqual(h.read(),before);
+  h.storage.setItem=write;h.click('layout-reset-confirm',{layoutPage:'dashboard'});
+  assert.deepEqual(visibleWidgetIds(h.html()),screenLayout.layoutOrder('dashboard'));assert.deepEqual(h.read().screenHidden,{dashboard:[],planner:['calendar']});
+  assert.deepEqual(h.read().screenLayouts.planner,before.screenLayouts.planner);assert.deepEqual(h.read().records,before.records);
+  assert.deepEqual(h.relaunch().read(),h.read());assert.equal(h.requests.length,0);
+});
+test('Hidden choices ignore stale actions outside editing, unknown IDs, example mode and unreadable storage',()=>{
+  const h=harness(2),before=h.read();for(const action of ['layout-hide','layout-show'])for(const id of ['balance','calendar','<script>'])h.click(action,{id});assert.deepEqual(h.read(),before);
+  h.click('dashboard');h.click('demo');h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-hide',{id:'balance'});assert.deepEqual(h.read(),before);
+  h.click('demo');h.run('storageFailed=true');h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-hide',{id:'balance'});assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+test('Hidden calendar and next-date widgets skip their expensive render calculations until the editor needs a preview',()=>{
+  const saved={...fixture(2),screenHidden:{dashboard:['next'],planner:['calendar','annual']}};
+  const h=harness(2,{savedState:saved,hash:'#planner'});
+  h.run('let calendarCalls=0;const originalCalendar=calendarHTML;calendarHTML=(...args)=>{calendarCalls++;return originalCalendar(...args)};render()');assert.equal(h.run('calendarCalls'),0);
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'planner'});assert.equal(h.run('calendarCalls'),1);h.click('layout-cancel');assert.equal(h.run('calendarCalls'),1);
+  h.click('dashboard');h.run('let nextCalls=0;const originalEarliest=earliest;earliest=(...args)=>{nextCalls++;return originalEarliest(...args)};render()');assert.equal(h.run('nextCalls'),0);
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});assert.equal(h.run('nextCalls'),4);
+  assert.deepEqual(h.read(),saved);assert.equal(h.requests.length,0);
+});
+
 
 test('Failed direct entry keeps the editor and its values available for a successful retry',()=>{
   const h=harness(2),before=h.read();h.click('add-record');
@@ -777,4 +981,19 @@ test('Backups reject inherited object keys and non-string donation types before 
     assert.equal(!!h.elements.get('#dialog').open,false);
     assert.deepEqual(h.read(),before);assert.match(h.elements.get('#toast').innerHTML,/복원하지 못했습니다/);
   }
+});
+
+
+test('Record actions form four ordered entries and the issuance button launches Red Connect only by explicit request without changing records',()=>{
+  const saved={...fixture(3),displayOptions:{redConnectCalendar:false,redConnectPlan:false}},h=harness(3,{savedState:saved}),before=h.read();
+  assert.equal(h.elements.has('#quick-add'),false);
+  const group=h.html().match(/class="record-entry-grid"[\s\S]*?<\/div>/)[0];
+  assert.deepEqual([...group.matchAll(/data-action="([^"]+)"/g)].map(m=>m[1]),['add-record','issue-certificate','import-text','import-certificate']);
+  assert.match(group,/헌혈증명서 발급받기<\/span><small>\(레드커넥트 실행\)<\/small>/);
+  assert.match(group,/여러 기록 추가하기/);assert.match(group,/증명서 PDF 등록하기/);
+  let launches=0;h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;
+  h.click('records');assert.equal(launches,0);h.click('issue-certificate');assert.equal(launches,1);assert.deepEqual(h.read(),before);
+  h.window.BloodNoteAndroid.requestRedConnect=()=>{throw Error('unavailable')};h.click('issue-certificate');assert.match(h.elements.get('#toast').innerHTML,/열지 못했습니다/);assert.deepEqual(h.read(),before);
+  h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;h.click('demo');h.click('records');
+  assert.match(h.html(),/data-action="issue-certificate" disabled/);h.click('issue-certificate');assert.equal(launches,1);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
 });

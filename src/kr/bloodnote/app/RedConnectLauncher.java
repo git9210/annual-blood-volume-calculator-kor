@@ -23,7 +23,7 @@ final class RedConnectLauncher {
         if (launchIntent() == null) { unavailable(); return; }
         final AlertDialog consent = new AlertDialog.Builder(activity)
             .setTitle("레드커넥트를 실행할까요?")
-            .setMessage("레드커넥트 실행 후 로그인·헌혈 예약 등을 이용하면 인터넷 연결과 데이터 요금이 발생할 수 있습니다.\n\n이 앱의 헌혈 기록·계획·PDF는 전달하지 않습니다. 날짜·종류·장소·시간을 레드커넥트에서 직접 선택하고 예약을 완료해 주세요.\n\n계획 저장과 실제 예약은 별개입니다. 이 화면의 선택은 자동 저장되지 않으며, 레드커넥트의 데이터 사용은 해당 앱의 설정을 따릅니다.")
+            .setMessage("레드커넥트 실행 후 로그인·헌혈 예약·증명서 발급 등을 이용하면 인터넷 연결과 데이터 요금이 발생할 수 있습니다.\n\n이 앱의 헌혈 기록·계획·PDF는 전달하지 않습니다. 레드커넥트의 시작 화면을 엽니다. 예약이나 증명서 발급 메뉴는 해당 앱에서 직접 선택해 주세요.\n\n계획 저장·예약·증명서 발급은 각각 별개의 작업입니다. 레드커넥트의 데이터 사용은 해당 앱의 설정을 따릅니다.")
             .setNegativeButton("취소", (dialog, which) -> cancelPending())
             .setPositiveButton("확인 후 실행", (dialog, which) -> {
                 // Cancel/back/pause/dismiss revoke this particular prompt permanently.

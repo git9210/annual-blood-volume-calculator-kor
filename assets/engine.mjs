@@ -29,14 +29,22 @@ export function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00Z')-new
 // Personal deferrals affect eligibility only. They are never donations and never
 // alter inWindow(), stats(), releaseDate() or a previous donation's wait period.
 export const RESTRICTION_MAX_DAYS=3650;
-// Korean letters include standalone jamo and intermediate IME composition.
-// Invisible Hangul fillers U+115F, U+1160 and U+3164 remain excluded.
-export function restrictionReasonUnits(value){return Array.from(value).reduce((sum,char)=>sum+(/[가-힣ㄱ-ㅣ\u1100-\u115e\u1161-\u11ff]/.test(char)?2:1),0);}
+// Keep the existing Korean 20 / other text 40 weighted bound for all scripts.
+export function restrictionReasonUnits(value){return Array.from(value).reduce((sum,char)=>sum+(/\p{Script=Hangul}/u.test(char)?2:1),0);}
+// Block emoji presentation, flags, skin tones, keycaps and common text faces.
+// Default-text symbols such as ©, ™ and arrows remain ordinary text unless
+// an emoji presentation selector follows them.
+const REASON_EMOJI=/[\p{Emoji_Presentation}\p{Regional_Indicator}\u20e3\ufe0f\u2639-\u263b\u2661\u2665\u2764]/u;
+// Text faces have no universal Unicode category. Match common forms without
+// blocking ordinary punctuation, URLs or standalone Korean jamo.
+const REASON_EMOTICON=/(?:\^{2,}|\^[_ .-]?\^|[Ttㅠㅜಠ][_.-][Ttㅠㅜಠ]|[><][_.-][><]|[Oo0][_.-][Oo0]|[:;=8][-^']?[)(DPp](?![\p{L}\p{N}])|(?:^|\s)[:;=8xX][-^']?[/\\](?=\s|$)|¯\\_|[╯╰][^\n]{0,30}[┻┬]|ʕ[^\n]{0,30}ʔ)/u;
+const REASON_HIDDEN=/[\p{Cc}\p{Cs}\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\u3164\ufeff\uffa0\u{e0000}-\u{e007f}]/u;
 export function normalizeRestrictionReason(value){
   if(typeof value!=='string')throw Error('헌혈금지사유를 확인해 주세요.');
   const reason=value.normalize('NFC').trim();
-  if(!/^[가-힣ㄱ-ㅣ\u1100-\u115e\u1161-\u11ffA-Za-z0-9 "'‘’“”?!()]*$/.test(reason))throw Error('한글(자음·모음 포함)·영문·숫자·공백·따옴표·물음표·느낌표·괄호만 입력할 수 있습니다.');
-  if(restrictionReasonUnits(reason)>40)throw Error('한글 20자 또는 영문·숫자 40자 이내로 입력해 주세요. 혼합 입력은 비례 계산합니다.');
+  if(REASON_EMOJI.test(reason)||REASON_EMOTICON.test(reason))throw Error('이모지와 이모티콘은 입력할 수 없습니다.');
+  if(REASON_HIDDEN.test(reason))throw Error('줄바꿈·제어 문자·보이지 않는 문자는 입력할 수 없습니다.');
+  if(restrictionReasonUnits(reason)>40)throw Error('한글 20자 또는 그 밖의 문자 40자 이내로 입력해 주세요. 혼합 입력은 비례 계산합니다.');
   return reason;
 }
 export function validateRestrictions(value){

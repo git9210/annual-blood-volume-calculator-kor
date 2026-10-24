@@ -56,6 +56,21 @@ test('Restriction edit/delete/undo retain records, plans and settings across a r
   restarted.run('undoAction()');assert.deepEqual(restarted.read(),saved);
   const encrypted=h.run("JSON.stringify(validateState(state))");assert.equal(JSON.parse(encrypted).restrictions[0].id,'pause');
 });
+test('Foreign and special-character reasons stay literal text across save, edit and relaunch',()=>{
+  const h=harness({plans:[{id:'next',date:'2026-11-06',type:'plasma'}]}),before=h.read();
+  const reason='薬 & <img src=x onerror=x> / Ω';
+  h.click('day',{date:'2026-10-23'});h.click('restriction-new');
+  assert.match(h.html(),/name="reason" type="text"/);assert.doesNotMatch(h.html(),/type="file"|contenteditable/);
+  h.restrictionForm({reason}).onsubmit({preventDefault(){}});
+  const saved=h.read();assert.equal(saved.restrictions[0].reason,reason);
+  assert.deepEqual(saved.records,before.records);assert.deepEqual(saved.plans,before.plans);
+  assert.match(h.app(),/薬 &amp; &lt;img src=x onerror=x&gt; \/ Ω/);assert.doesNotMatch(h.app(),/<img src=x/);
+  h.click('restriction-edit',{id:saved.restrictions[0].id});
+  assert.equal(h.restrictionForm().elements.reason.value,reason);
+  h.click('restriction-back');
+  const reopened=harness(saved);assert.equal(reopened.read().restrictions[0].reason,reason);
+  assert.match(reopened.app(),/薬 &amp; &lt;img src=x onerror=x&gt; \/ Ω/);assert.equal(h.requests()+reopened.requests(),0);
+});
 test('Invalid reasons/durations, failed writes, stale editors and outside taps never partly save a restriction',()=>{
   const h=harness(),before=h.read();h.click('day',{date:'2026-10-23'});h.click('restriction-new');
   for(const values of [{reason:'💊'},{reason:'가'.repeat(21)},{reason:'',days:'0'},{days:'1.5'},{days:'1e3'},{days:'3651'},{days:'14',start:'2199-12-31'}]){
@@ -97,7 +112,7 @@ function harness({records=[],plans=[],restrictions}={}){
     dialogHTML=html;
     if(html.includes('id="restriction-form"'))for(const name of ['start','reason','days']){
       const match=html.match(new RegExp(`name="${name}"[^>]*value="([^"]*)"`));
-      nodes.get('#restriction-form').elements[name].value=(match?.[1]||'').replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&amp;/g,'&');
+      nodes.get('#restriction-form').elements[name].value=(match?.[1]||'').replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
     }
   }});
   const form=nodes.get('#event-form');form.elements={date:{value:'2026-10-01'},type:{value:'plasma'}};
@@ -160,6 +175,21 @@ test('Swipes respect year/month boundaries and never swallow keyboard date activ
   h.run("moveCalendar('1900-01-01');render()");swipe(80,280);assert.equal(h.run('calendarMonth'),'1900-01');
   h.run("moveCalendar('2199-12-01');render()");swipe(280,80);assert.equal(h.run('calendarMonth'),'2199-12');
   assert.equal(h.calendarEvent('click',{detail:0,date:'2199-12-20'}).stopped,false);assert.equal(h.open(),true);
+});
+test('Requested captions are removed, the Red Connect action remains, and zero restrictions stay visible under plans',()=>{
+  const h=harness({plans:[{id:'next',date:'2026-11-06',type:'plasma'}]}),before=h.read();
+  assert.doesNotMatch(h.app(),/class="calendar-range"|가장 가까운 예정 헌혈|예약은 레드커넥트에서 진행하세요/);
+  assert.match(h.app(),/aria-label="네 종류의 헌혈 가능 여부가 표시된 월간 달력"/);
+  assert.match(h.app(),/data-action="plan-red-connect" data-id="next"/);
+  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">0건<\/span><\/summary>/);
+  assert.match(h.app(),/등록된 헌혈 제한 기간이 없습니다/);
+  assert.ok(h.app().indexOf('나의 장기 계획')<h.app().indexOf('restriction-list'));
+  assert.ok(h.app().indexOf('restriction-list')<h.app().indexOf('앞으로 12개월의 연간 계산량'));
+  h.click('day',{date:'2026-10-23'});h.click('restriction-new');h.restrictionForm({reason:'薬 / 검사'}).onsubmit({preventDefault(){}});
+  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">1건/);
+  h.click('restriction-delete',{id:h.read().restrictions[0].id});
+  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">0건/);
+  assert.deepEqual(h.read().records,before.records);assert.deepEqual(h.read().plans,before.plans);assert.equal(h.requests(),0);
 });
 test('Restriction dates are marked through both endpoints; their list follows long-term plans and completed donations stay distinct',()=>{
   const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-24',reason:'약 복용'}]}),before=h.read();
@@ -245,9 +275,9 @@ test('Android back-style dialog close cancels unsaved selection and clears trans
   assert.equal(h.requests(),0);
 });
 
-test('One outside tap dismisses record choices, manual editor and date popup without saving or passing the tap through',()=>{
+test('One outside tap dismisses the layout prompt, manual editor and date popup without saving or passing the tap through',()=>{
   const h=harness({plans:[{id:'kept',date:'2027-02-19',type:'plasma'}]}),before=h.read(),writes=h.writes();
-  for(const open of [()=>h.nodes.get('#quick-add').onclick(),()=>h.click('add-record'),()=>{h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'whole'});}]){
+  for(const open of [()=>h.click('layout-request'),()=>h.click('add-record'),()=>{h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'whole'});}]){
     open();assert.equal(h.open(),true);h.pointer('pointerdown');
     assert.deepEqual(h.pointer('click'),{prevented:true,stopped:true});
     assert.equal(h.open(),false);assert.equal(h.run('dayPopup'),null);
@@ -279,7 +309,7 @@ test('Backdrop dismissal runs existing PDF and backup cancellation cleanup and a
   const previous=h.run('backupTask');h.pointer('pointerdown');h.pointer('click');
   assert.equal(h.run('window.cancelledImports'),1);assert.equal(h.run('certificateStage'),null);
   assert.equal(h.run('backupTask'),previous+1);assert.deepEqual(h.read(),before);
-  h.nodes.get('#quick-add').onclick();assert.equal(h.open(),true);
+  h.click('add-record');assert.equal(h.open(),true);
   h.click('close-dialog');assert.equal(h.open(),false);
 });
 

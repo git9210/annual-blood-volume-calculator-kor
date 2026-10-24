@@ -52,11 +52,16 @@ test('Existing plans are flagged without deletion; generated monthly drafts skip
   assert.deepEqual(draft.skipped,['2026-10']);assert.equal(draft.draft.length,2);
   for(const e of draft.draft)assert.equal(activeRestrictions(e.date,ranges).length,0);
 });
-test('Optional reasons obey Korean 20 / Latin 40 weighted bounds and reject emoji or markup',()=>{
+test('Optional reasons obey Korean 20 / other text 40 weighted bounds and reject emoji or controls',()=>{
   for(const text of ['', '약 복용', '가'.repeat(20),'a'.repeat(40),'가'.repeat(10)+'1'.repeat(20),`약 'A' (14)?! “휴식”`])assert.equal(normalizeRestrictionReason(text),text);
-  for(const text of ['가'.repeat(21),'a'.repeat(41),'가'.repeat(20)+'1','💊','🙂','^^','<script>','a\nb','a\tb','a\u200bb'])assert.throws(()=>normalizeRestrictionReason(text));
+  for(const text of ['가'.repeat(21),'a'.repeat(41),'가'.repeat(20)+'1','💊','🙂','^^','a\nb','a\tb','a\u200bb'])assert.throws(()=>normalizeRestrictionReason(text));
   assert.equal(normalizeRestrictionReason('  약 복용  '),'약 복용');
   assert.equal(normalizeRestrictionReason('가'.normalize('NFD')),'가');
+});
+test('Foreign scripts and punctuation are accepted as text; emoji sequences and common emoticons are not',()=>{
+  for(const text of ['药物服用・休養中', 'médicament / café', 'лекарство № 2', 'دواء لمدة 3 أيام', 'दवाई (क्‍ष)', 'ภาษาไทย', 'Ελλάδα', 'é + & < > @ # % [] {} / \\ |', '<script>alert(1)</script>', '© ® ™ → ↔ ± ≤ ≥', 'https://example.org/a', '𠮷'.repeat(40)])assert.equal(normalizeRestrictionReason(text),text);
+  for(const text of ['💊','🙂','🇰🇷','👩‍⚕️','👍🏽','1️⃣','#️⃣','©️','♥','☺',':)',':-)', ';P','^^','(^_^)','T_T','ಠ_ಠ','¯\\_(ツ)_/¯','ʕ•ᴥ•ʔ'])assert.throws(()=>normalizeRestrictionReason(text),undefined,text);
+  assert.throws(()=>normalizeRestrictionReason('𠮷'.repeat(41)));
 });
 test('Standalone Korean jamo and IME prefixes are accepted with the same 20-letter limit, without allowing invisible fillers',()=>{
   for(const text of ['ㄱ','ㄴ','ㅡ','ㅣ','ㅋㅋ','ㄱㄴㅡㅣ','ᄀ','ᅡ','ᆨ','ㄱ'.repeat(20),'ㅣ'.repeat(10)+'1'.repeat(20)])assert.equal(normalizeRestrictionReason(text),text);
