@@ -96,3 +96,11 @@ test('Wrong passwords, tampering and excessive KDF parameters cannot decrypt a b
   await assert.rejects(()=>decryptBackup({...encrypted,iv:'AA=='},password),/형식/);
   await assert.rejects(()=>encryptBackup(records,'short'),/10/);
 });
+
+test('One-time welcome marker uses the same encrypted vault without changing donation records',()=>{
+ const h=nativeFixture({[RECORDS]:records}),store=createProtectedStorage(h),key='blood-note-onboarding-v1';
+ store.setItem(key,'1');const restarted=createProtectedStorage(h);
+ assert.equal(restarted.getItem(key),'1');assert.equal(restarted.getItem(RECORDS),records);
+ assert.ok(!h.disk().includes(Buffer.from(key)));assert.throws(()=>store.setItem('arbitrary-permission','yes'));
+ h.failWrite(true);assert.throws(()=>store.setItem(key,'other'));assert.equal(store.getItem(key),'1');assert.equal(store.getItem(RECORDS),records);
+});

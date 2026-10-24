@@ -1,7 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="192" android:viewportHeight="192">
-    <group android:scaleX="0.75" android:scaleY="0.75" android:translateX="24" android:translateY="24">
-        <path android:fillColor="#dce6bf" android:pathData="M96 32 C83 52 53 82 53 111 C53 137 71 157 96 157 C121 157 139 137 139 111 C139 82 109 52 96 32 Z" />
-        <path android:pathData="M79 104 H113 M79 122 H113" android:strokeColor="#184d44" android:strokeWidth="9" android:strokeLineCap="round" />
-    </group>
-</vector>
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="18dp">
+    <bitmap android:src="@drawable/brand_blood" android:gravity="fill" android:filter="true" />
+</inset>

@@ -39,12 +39,12 @@ const future=engine.addDays(engine.today(),14);
 events['app:change']({target:{id:'sim-date',value:future,dataset:{}}});
 assert.ok(days().includes(future));
 click({action:'day',date:future});
-assert.match(elements.get('#dialog-content').innerHTML,/헌혈 방식을 선택해 주세요/);
+assert.match(elements.get('#dialog-content').innerHTML,/id="date-popup-title"/);
 click({action:'day-type',type:'plasma'});assert.equal(read().plans.length,0);
 click({action:'day-confirm'});
 assert.equal(read().plans.length,1);assert.equal(read().plans[0].date,future);assert.equal(read().records.length,0);
 click({page:'records'});assert.equal((app.innerHTML.match(/class="record-date"/g)||[]).length,0);
-click({page:'settings'});assert.match(app.innerHTML,/안드로이드 3.0.1/);assert.match(app.innerHTML,/data-action="demo"/);
+click({page:'settings'});assert.match(app.innerHTML,/안드로이드 4.0.1/);assert.match(app.innerHTML,/data-action="demo"/);
 assert.equal(requests,0);
 console.log('PASS: monthly calendar, date popup, confirm-once plan creation, records/settings, zero holiday requests. CSS is not rendered in this check.');
 

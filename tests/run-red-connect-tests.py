@@ -28,14 +28,34 @@ public class ComponentName {
     public String getPackageName() { return name; }
 }
 """,
+    "android/net/Uri.java": """
+package android.net;
+public class Uri {
+    private final String value;
+    private Uri(String value) { this.value = value; }
+    public static Uri parse(String value) { return new Uri(value); }
+    public String getScheme() { int i=value.indexOf(':'); return i<0?null:value.substring(0,i); }
+    private java.net.URI parsed() { return java.net.URI.create(value); }
+    public String getHost() { return parsed().getHost(); }
+    public String getUserInfo() { return parsed().getUserInfo(); }
+    public int getPort() { return parsed().getPort(); }
+    @Override public String toString() { return value; }
+}
+""",
     "android/content/Intent.java": """
 package android.content;
+import android.net.Uri;
 public class Intent {
-    public final ComponentName component;
-    public String data;
-    public String extras;
+    public static final String ACTION_VIEW="android.intent.action.VIEW", CATEGORY_BROWSABLE="android.intent.category.BROWSABLE";
+    public ComponentName component;
+    public Uri data;
+    public String action, category, extras;
     public boolean fileGrant;
+    public Intent selector;
     public Intent(ComponentName component) { this.component = component; }
+    public Intent(String action, Uri data) { this.action=action; this.data=data; }
+    public Intent addCategory(String category) { this.category=category; return this; }
+    public void setSelector(Intent selector) { this.selector=selector; }
     public ComponentName getComponent() { return component; }
     public static Intent makeMainActivity(ComponentName component) { return new Intent(component); }
 }
@@ -115,7 +135,7 @@ public class RedConnectLauncherTest {
     public static void main(String[] args) {
         Activity app = new Activity();
         Intent installed = new Intent(new ComponentName("com.sk.redconnect"));
-        installed.data = "never-forward"; installed.extras = "never-forward"; installed.fileGrant = true;
+        installed.data = android.net.Uri.parse("https://never-forward.example"); installed.extras = "never-forward"; installed.fileGrant = true;
         app.packages.available = installed;
         boolean[] foreground = {false};
         RedConnectLauncher launcher = new RedConnectLauncher(app, () -> foreground[0]);
@@ -126,6 +146,8 @@ public class RedConnectLauncherTest {
         check(first.visible && app.launched == 0);
         check(first.message.contains("데이터 요금") && first.message.contains("전달하지 않습니다"));
         check(first.message.contains("증명서 발급") && first.message.contains("시작 화면"));
+        check(first.message.contains("원하는 지점·날짜·시간·헌혈 종류") && first.message.contains("못할 수 있습니다"));
+        check(first.message.contains("실제 예약이 완료되는 것은 아닙니다") && first.message.contains("예약 내역을 확인해 주세요"));
         check(first.positiveLabel.equals("확인 후 실행"));
         launcher.request(); check(AlertDialog.last == first && app.packages.queries == 1);
         first.negative.onClick(first, 0); check(!first.visible && app.launched == 0);
@@ -147,22 +169,70 @@ public class RedConnectLauncherTest {
         launcher.cancelPending();
         app.packages.available = null;
         launcher.request(); AlertDialog missing = AlertDialog.last;
-        check(missing.title.equals("레드커넥트를 열 수 없습니다") && missing.negative == null);
-        missing.positive.onClick(missing, 1); check(app.launched == 1);
+        check(missing.title.equals("레드커넥트를 열 수 없습니다") && missing.negative != null);
+        missing.negative.onClick(missing, 0); missing.positive.onClick(missing, 1); check(app.launched == 1);
         app.packages.available = installed;
         launcher.request(); AlertDialog removed = AlertDialog.last;
         app.packages.available = null; removed.positive.onClick(removed, 1);
         check(app.launched == 1 && AlertDialog.last.title.equals("레드커넥트를 열 수 없습니다"));
         launcher.cancelPending();
         app.packages.available = new Intent(new ComponentName("other.app"));
-        launcher.request(); check(AlertDialog.last.positiveLabel.equals("닫기")); launcher.cancelPending();
+        launcher.request(); check(AlertDialog.last.positiveLabel.equals("브라우저로 계속")); launcher.cancelPending();
         app.packages.available = installed;
         for (RuntimeException error : new RuntimeException[]{new ActivityNotFoundException(), new SecurityException()}) {
             app.launchError = error;
             launcher.request(); AlertDialog denied = AlertDialog.last; denied.positive.onClick(denied, 1);
-            check(app.launched == 1 && AlertDialog.last.positiveLabel.equals("닫기"));
+            check(app.launched == 1 && AlertDialog.last.positiveLabel.equals("브라우저로 계속"));
             launcher.cancelPending();
         }
+        check(!launcher.cancelPending());
+        app.launchError = null;
+        int launched = app.launched, queries = app.packages.queries;
+        launcher.requestService("invalid"); launcher.requestService(null);
+        check(app.launched == launched && app.packages.queries == queries);
+        launcher.requestService("browser"); AlertDialog web = AlertDialog.last;
+        check(web.message.contains("데이터 요금") && web.message.contains("https://www.bloodinfo.net/"));
+        check(web.message.contains("원하는 지점·날짜·시간·헌혈 종류"));
+        check(web.message.contains("실제 예약이 완료되는 것은 아닙니다") && web.message.contains("예약 내역을 확인해 주세요"));
+        check(app.launched == launched && app.packages.queries == queries);
+        launcher.requestWeb("https://emi.bloodinfo.net/emi4.do?lang=ko"); check(AlertDialog.last == web);
+        web.negative.onClick(web, 0); web.positive.onClick(web, 1); check(app.launched == launched);
+        launcher.requestService("browser"); web=AlertDialog.last; web.positive.onClick(web, 1);
+        check(app.launched == ++launched && app.packages.queries == queries);
+        check(app.lastIntent.data.toString().equals("https://www.bloodinfo.net/"));
+        check(app.lastIntent.action.equals(Intent.ACTION_VIEW) && app.lastIntent.category.equals(Intent.CATEGORY_BROWSABLE));
+        check(app.lastIntent.selector != null && app.lastIntent.selector.data.toString().equals("https://"));
+        check(app.lastIntent.component == null && app.lastIntent.extras == null && !app.lastIntent.fileGrant);
+        web.positive.onClick(web, 1); check(app.launched == launched);
+        for (String url : new String[]{"https://emi.bloodinfo.net/emi4.do?lang=ko", "https://github.com/hyunbinseo/holidays-kr", "https://github.com/hyunbinseo/holidays-kr/blob/main/LICENSE"}) {
+            launcher.requestWeb(url); AlertDialog p=AlertDialog.last;
+            check(app.launched == launched && p.message.contains("데이터 요금") && p.message.contains(url));
+            p.positive.onClick(p,1); check(app.launched == ++launched && app.lastIntent.data.toString().equals(url));
+        }
+        for (String bad : new String[]{null,"", "http://www.bloodinfo.net/", "https://www.bloodinfo.net.evil/", "https://user@www.bloodinfo.net/", "https://www.bloodinfo.net:443/", "javascript:alert(1)", "intent://www.bloodinfo.net", "file:///sdcard/private", "https://example.com/", "https://github.com@evil.example/"}) {
+            launcher.requestWeb(bad); AlertDialog p=AlertDialog.last;
+            check(p.title.equals("열 수 없는 주소입니다") && p.positiveLabel.equals("닫기"));
+            p.positive.onClick(p,1); check(app.launched == launched);
+        }
+        launcher.requestWeb("https://www.bloodinfo.net/"); AlertDialog outsideWeb=AlertDialog.last;
+        outsideWeb.dismiss(); outsideWeb.positive.onClick(outsideWeb,1); check(app.launched == launched);
+        launcher.requestService("browser"); AlertDialog staleWeb=AlertDialog.last;
+        foreground[0]=false; launcher.cancelPending();
+        launcher.requestService("browser"); check(AlertDialog.last == staleWeb);
+        foreground[0]=true; staleWeb.positive.onClick(staleWeb,1); check(app.launched == launched);
+        launcher.requestService("browser"); AlertDialog liveWeb=AlertDialog.last;
+        staleWeb.negative.onClick(staleWeb,0); check(liveWeb.visible);
+        liveWeb.positive.onClick(liveWeb,1); check(app.launched == ++launched);
+        app.packages.available=null; launcher.requestService("redconnect"); AlertDialog fallback=AlertDialog.last;
+        check(fallback.positiveLabel.equals("브라우저로 계속") && fallback.message.contains("데이터 요금") && app.launched == launched);
+        check(fallback.message.contains("원하는 지점·날짜·시간·헌혈 종류"));
+        check(fallback.message.contains("실제 예약이 완료되는 것은 아닙니다") && fallback.message.contains("예약 내역을 확인해 주세요"));
+        fallback.positive.onClick(fallback,1); check(app.launched == ++launched && app.lastIntent.data.toString().equals("https://www.bloodinfo.net/"));
+        fallback.positive.onClick(fallback,1); check(app.launched == launched);
+        app.launchError=new ActivityNotFoundException();
+        launcher.requestService("browser"); AlertDialog broken=AlertDialog.last; broken.positive.onClick(broken,1);
+        check(app.launched == launched && AlertDialog.last.title.equals("인터넷 브라우저를 열 수 없습니다")); launcher.cancelPending();
+        app.launchError=null;
         check(!launcher.cancelPending());
         System.out.println("PASS: " + checks + " launcher consent/target/lifecycle checks (host Android fakes; not device UI).");
     }

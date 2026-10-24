@@ -69,3 +69,15 @@ test('PDF review rejects inherited keys and array-valued types as invalid rows, 
   }
   assert.deepEqual(saved,before);
 });
+
+test('PDF identity/location/file data stays out of review; only date, type and internal ID enter persisted records',()=>{
+  const saved=state(),before=clone(saved),identity={name:'가상성명',address:'테스트시 가상구 예시로 123',birthDate:'1980-01-02',place:'가상헌혈센터',residentNumber:'000000-0000000',certificateNumber:'99-20-000001',filename:'가상성명.pdf',password:'synthetic-password'};
+  const p={...payload([{...row('2026-09-01'),...identity}]),...identity};
+  const review=reviewCertificate(p,saved.records,saved.plans,today);
+  assert.deepEqual(Object.keys(review[0]).sort(),['date','index','page','selectable','selected','sourceType','status','type']);
+  const merged=mergeCertificate(saved,p,[0],today,()=>'internal-id').state;
+  assert.deepEqual(merged.records.at(-1),{id:'internal-id',date:'2026-09-01',type:'mixed'});
+  const text=JSON.stringify(merged);
+  for(const marker of Object.values(identity))assert.equal(text.includes(marker),false,marker);
+  assert.deepEqual(saved,before);
+});

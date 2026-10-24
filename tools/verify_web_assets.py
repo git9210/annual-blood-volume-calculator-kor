@@ -32,6 +32,8 @@ class DocumentResources(HTMLParser):
         attrs = dict(attrs)
         if tag == "script" and attrs.get("src"):
             self.references.append(attrs["src"])
+        if tag == "img" and attrs.get("src"):
+            self.references.append(attrs["src"])
         if tag == "link" and attrs.get("href") and set(attrs.get("rel", "").split()) & {"stylesheet", "icon"}:
             self.references.append(attrs["href"])
 

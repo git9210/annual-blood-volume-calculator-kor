@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">연간채혈량 계산기</string>
+    <string name="app_name">헌혈 계산기</string>
     <color name="brand">#184d44</color>
+    <color name="icon_backdrop">#f2efe7</color>
 </resources>

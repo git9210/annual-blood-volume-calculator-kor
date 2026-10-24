@@ -1,4 +1,4 @@
-const KEYS=['blood-note-v1','blood-note-holidays-v1'];
+const KEYS=['blood-note-v1','blood-note-holidays-v1','blood-note-onboarding-v1'];
 const checkReply=value=>{const reply=JSON.parse(value);if(reply?.ok!==true)throw Error('암호화 저장소를 열거나 저장하지 못했습니다.');return reply;};
 const unpack=text=>{
   const data=JSON.parse(text);

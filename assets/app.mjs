@@ -8,23 +8,34 @@ import {HOLIDAY_DATA_LICENSE} from './licenses.mjs';
 import {LAYOUT_WIDGETS,layoutOrder,validateScreenLayouts,hiddenWidgetIds,validateScreenHidden,shiftLayout,insertLayoutBefore,layoutSpans} from './screen-layout.mjs';
 import {installLayoutDrag} from './layout-drag.mjs';
 
+const ONBOARDING_KEY='blood-note-onboarding-v1';
+const CERTIFICATE_PRIVACY_NOTICE=`<section class="certificate-privacy-notice"><h3>증명서 개인정보 안내</h3><p class="settings-note">제작자는 증명서의 개인정보를 수집하지 않습니다. 저장하는 헌혈 정보는 날짜와 종류이며, 횟수는 등록된 기록 수로 계산합니다. 주소·성명·헌혈 장소(기관)·생년월일·주민등록번호 등 신원정보는 별도 항목으로 추출·저장하거나 외부로 전송하지 않습니다.</p><p class="settings-note">PDF를 읽는 동안 원문은 기기 메모리에서 일시 처리됩니다. 증서번호와 쪽 번호·전체 건수는 중복·누락 확인에만 사용하고 완료 기록에 저장하지 않습니다. 원본 PDF의 복사본을 만들지 않으며, PDF 암호가 생년월일이더라도 이번 파일 열기에만 사용하고 별도로 보관하거나 외부로 전송하지 않습니다.</p></section>`;
 const KEY='blood-note-v1', $=s=>document.querySelector(s), app=$('#app'), dialog=$('#dialog');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>crypto.randomUUID();
 const APP_PAGES=['dashboard','planner','records','settings'];
 const START_PAGES={dashboard:'한눈에 보기',planner:'일정 시뮬레이터',records:'헌혈 기록',last:'마지막 화면'};
 const THEMES={blood:{label:'Blood Donation',description:'따뜻한 레드'},pastel:{label:'Soft Pastel',description:'라벤더 · 살구 · 민트'},initial:{label:'Initial',description:'기존 그린 테마'}};
+const THEME_ICONS={blood:'brand-blood.png',pastel:'brand-pastel.png',initial:'brand-initial.png'};
 const validTheme=value=>typeof value==='string'&&Object.hasOwn(THEMES,value);
-const themeOf=data=>validTheme(data?.theme)?data.theme:'initial';
+const themeOf=data=>validTheme(data?.theme)?data.theme:'blood';
+const QUALIFICATION_URL='https://emi.bloodinfo.net/emi4.do?lang=ko';
+const DONATION_SERVICES={browser:{label:'인터넷 브라우저',description:'기본 브라우저로 대한적십자사 혈액관리본부를 엽니다.'},redconnect:{label:'레드커넥트',description:'설치된 레드커넥트 앱의 시작 화면을 엽니다.'}};
+const validDonationService=value=>typeof value==='string'&&Object.hasOwn(DONATION_SERVICES,value);
+const donationServiceOf=data=>validDonationService(data?.donationService)?data.donationService:'redconnect';
 const startPageChoiceOf=data=>Object.hasOwn(START_PAGES,data?.startPage)?data.startPage:'dashboard';
 const startPageOf=data=>startPageChoiceOf(data)==='last'?(APP_PAGES.includes(data?.lastPage)?data.lastPage:'dashboard'):startPageChoiceOf(data);
 const DISPLAY_OPTIONS={
   balanceHighlight:{label:'잔여량 구간별 표시',description:'잔여량에 따라 카드 색과 계산량 충족 설명을 표시합니다.'},
+  donorDay:{label:'헌혈 기념일 표시',description:'달력·날짜 팝업·상단 날짜에 매월 13일 헌혈의 날과 6월 14일 세계 헌혈자의 날을 표시합니다. 평일 배경색은 바꾸지 않습니다.'},
   recordHighlight:{label:'헌혈 완료일 강조',description:'달력의 완료 날짜를 테마에 맞는 배경과 ✓로 표시합니다.'},
-  redConnectCalendar:{label:'레드커넥트 버튼 · 캘린더',description:'달력의 오늘·미래 날짜 팝업에 레드커넥트 열기 버튼을 표시합니다.'},
-  redConnectPlan:{label:'레드커넥트 버튼 · 장기 계획',description:'오늘 이후 가장 가까운 헌혈 계획에 레드커넥트 열기 버튼을 표시합니다.'}
+  redConnectCalendar:{label:'헌혈 예약하기 · 캘린더',description:'달력의 오늘·미래 날짜 팝업에 헌혈 예약하기 버튼을 표시합니다.'},
+  redConnectPlan:{label:'헌혈 예약하기 · 장기 계획',description:'오늘 이후 가장 가까운 헌혈 계획에 헌혈 예약하기 버튼을 표시합니다.'}
 };
 const displayEnabled=(key,data=demoMode?realState:state)=>data.displayOptions?.[key]!==false;
+const LIST_SORT_DEFAULTS={plans:'oldest',restrictions:'newest',archivedRestrictions:'newest'};
+const validSort=value=>value==='oldest'||value==='newest';
+const listSortOf=(key,data=demoMode?realState:state)=>validSort(data?.listSort?.[key])?data.listSort[key]:LIST_SORT_DEFAULTS[key];
 const fresh=()=>({version:1,rules:clone(DEFAULT_RULES),records:[],plans:[],complete:false,appliedImports:[]});
 const validAnchorDate=date=>validDate(date)&&date>='1900-01-01'&&date<='2199-12-31';
 const anchorModes=['last','today','custom'];
@@ -34,7 +45,7 @@ const num=n=>Number(n).toLocaleString('ko-KR');
 let storageFailed=false;
 function validateState(raw){
   raw=migrateLegacyTypes(raw);
-  if(!raw||raw.version!==1||!Array.isArray(raw.records)||!Array.isArray(raw.plans))throw Error('연간채혈량 계산기 백업 형식이 아닙니다.');
+  if(!raw||raw.version!==1||!Array.isArray(raw.records)||!Array.isArray(raw.plans))throw Error('헌혈 계산기 백업 형식이 아닙니다.');
   if(raw.records.length+raw.plans.length>3000)throw Error('헌혈 기록과 계획은 합계 3,000건까지 저장할 수 있습니다.');
   const r=raw.rules;if(!r||!r.volumes||!r.waits)throw Error('계산 기준을 찾을 수 없습니다.');
   for(const [key,max] of [['cap',100000],['wholeLimit',1000],['componentLimit',1000]])if(!Number.isInteger(r[key])||r[key]<1||r[key]>max)throw Error('계산 기준 숫자를 확인해 주세요.');
@@ -51,7 +62,12 @@ function validateState(raw){
   if(Object.keys(screenHidden).length)result.screenHidden=screenHidden;
   if(Object.hasOwn(START_PAGES,raw.startPage))result.startPage=raw.startPage;
   if(APP_PAGES.includes(raw.lastPage))result.lastPage=raw.lastPage;
+  if(raw.listSort&&typeof raw.listSort==='object'&&!Array.isArray(raw.listSort)){
+    const sorts={};for(const key of Object.keys(LIST_SORT_DEFAULTS))if(validSort(raw.listSort[key]))sorts[key]=raw.listSort[key];
+    if(Object.keys(sorts).length)result.listSort=sorts;
+  }
   if(validTheme(raw.theme))result.theme=raw.theme;
+  if(validDonationService(raw.donationService))result.donationService=raw.donationService;
   if(raw.displayOptions&&typeof raw.displayOptions==='object'&&!Array.isArray(raw.displayOptions)){
     const options={};
     for(const key of Object.keys(DISPLAY_OPTIONS))if(typeof raw.displayOptions[key]==='boolean')options[key]=raw.displayOptions[key];
@@ -69,15 +85,18 @@ catch{
   appStorage={getItem:()=>null,setItem:()=>{throw Error('암호화 저장소를 사용할 수 없습니다.');}};
   storageNotice('암호화 저장소를 열지 못했습니다. 기존 데이터는 덮어쓰지 않았습니다. 앱을 다시 시작해 주세요.');
 }
-let state=fresh();
-try{const raw=appStorage.getItem(KEY);if(raw)state=validateState(JSON.parse(raw));}catch{storageNotice('저장된 기록을 읽지 못했습니다. 기존 저장 내용은 덮어쓰지 않습니다. 설정·백업에서 백업을 복원하거나 저장소를 확인해 주세요.');}
+let state=fresh(),hadSavedState=false;
+try{const raw=appStorage.getItem(KEY);hadSavedState=raw!==null;if(raw)state=validateState(JSON.parse(raw));}catch{storageNotice('저장된 기록을 읽지 못했습니다. 기존 저장 내용은 덮어쓰지 않습니다. 설정·백업에서 백업을 복원하거나 저장소를 확인해 주세요.');}
 // A restored Activity keeps its current page; a fresh launch opens the saved start page.
 let realState=null,demoMode=false,page=APP_PAGES.includes(location.hash.slice(1))?location.hash.slice(1):startPageOf(state);
 let selected=today(),calendarMonth=today().slice(0,7),recordFilter='all';
 const RECORDS_PER_PAGE=5;
 let recordPageIndex=0,holidayConsentId=null;
 let calendarAnchor=today(),dayPopup=null,restrictionEditor=null;
-let screenEditor=null,layoutDrag=null,layoutPrompt=null;
+let screenEditor=null,layoutDrag=null,layoutPrompt=null,restrictionArchiveOpen=false;
+let backupTask=0,nextDatesCache=null;
+const sectionIds=['dashboard-next','dashboard-upcoming','dashboard-releases','dashboard-recent','long-term-plans','restriction-periods'];
+const sectionOpen=new Map();
 const restrictions=()=>state.restrictions||[];
 const calendarView=()=> 'month';
 function moveCalendar(date){calendarAnchor=date;calendarMonth=date.slice(0,7);}
@@ -104,7 +123,7 @@ function change(fn,message){
   render();if(message)toast(message,()=>{const current=state;state=before;if(!persist())state=current;render();});return true;
 }
 function rememberPage(){if(!demoMode&&startPageChoiceOf(state)==='last'&&state.lastPage!==page)persist();}
-function setPage(p){if(!APP_PAGES.includes(p))return;if(screenEditor){toast('상단의 저장 또는 취소로 화면 편집을 마쳐 주세요.');return;}page=p;location.hash=p;rememberPage();render();window.scrollTo({top:0});}
+function setPage(p){if(!APP_PAGES.includes(p))return;if(screenEditor){toast('상단의 저장 또는 취소로 화면 편집을 마쳐 주세요.');return;}if(page!==p)backupTask++;page=p;location.hash=p;rememberPage();render();window.scrollTo({top:0});}
 window.bloodNoteHandleBack=()=>{
   if(dialog.open){dialog.close();return true;}
   if(screenEditor){cancelScreenEdit();return true;}
@@ -150,10 +169,26 @@ function saveTheme(value){
   render();
   $(`[data-theme-option][value="${themeOf(state)}"]`)?.focus({preventScroll:true});
 }
+function saveDonationService(value){
+  if(!validDonationService(value)||donationServiceOf(state)===value)return;
+  if(demoMode){toast('예시 체험을 종료한 뒤 실행 방식을 변경해 주세요.');render();return;}
+  const before=state;
+  state={...state,donationService:value};
+  if(!persist())state=before;
+  else{undoAction=null;toast(`${DONATION_SERVICES[value].label}로 열도록 저장했습니다.`);}
+  render();
+  $(`[data-donation-service][value="${donationServiceOf(state)}"]`)?.focus({preventScroll:true});
+}
+function donationServiceSettings(){
+  const current=donationServiceOf(demoMode?realState:state);
+  return `<section class="card donation-service-card"><div class="card-head"><div><h2 id="donation-service-title">헌혈 예약/증명서 발급</h2><p>버튼을 눌렀을 때 열 방식을 선택하세요.</p></div></div><div class="donation-service-options" role="radiogroup" aria-labelledby="donation-service-title">${Object.entries(DONATION_SERVICES).map(([value,option])=>`<label class="donation-service-option${value===current?' is-current':''}"><input type="radio" name="donation-service" data-donation-service value="${value}" ${value===current?'checked':''} ${demoMode?'disabled':''}><span><strong>${option.label}</strong><small>${option.description}</small></span></label>`).join('')}</div><p class="settings-note">접속할 때마다 인터넷 연결과 데이터 사용 안내를 확인합니다. 예약·증명서 발급 메뉴는 열린 사이트나 앱에서 직접 선택해 주세요. 레드커넥트를 열 수 없으면 브라우저로 계속할지 묻습니다.</p></section>`;
+}
 function applyTheme(){
   const theme=themeOf(demoMode?realState:state);
   document.body?.setAttribute('data-theme',theme);
   $('meta[name="theme-color"]')?.setAttribute('content',{initial:'#184d44',blood:'#8e2742',pastel:'#f1c7c5'}[theme]);
+  const icon=$('#brand-icon');
+  if(icon&&icon.dataset.iconTheme!==theme){icon.src='./'+THEME_ICONS[theme];icon.dataset.iconTheme=theme;}
 }
 // Presentation only: the 39–430 mL scale never changes donation eligibility.
 function bloodBalancePalette(remaining){
@@ -170,14 +205,68 @@ function balanceThemeStyle(remaining,enabled){
 }
 function themeSettings(){
   const current=themeOf(demoMode?realState:state);
-  return `<section class="card theme-settings-card"><div class="card-head"><div><h2 id="theme-title">앱 테마</h2><p>화면의 색상과 분위기를 선택하세요.</p></div></div><div class="theme-options" role="radiogroup" aria-labelledby="theme-title">${Object.entries(THEMES).map(([value,option])=>`<label class="theme-option${value===current?' is-current':''}"><input type="radio" name="app-theme" data-theme-option value="${value}" ${value===current?'checked':''} ${demoMode?'disabled':''}><span class="theme-swatch theme-swatch-${value}" aria-hidden="true"><i></i><i></i><i></i></span><span class="theme-option-copy"><strong>${option.label}</strong><small>${option.description}</small></span></label>`).join('')}</div><p class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':'선택하면 바로 적용되며, 다시 열거나 백업을 복원해도 유지됩니다. 인터넷을 사용하지 않습니다.'}</p></section>`;
+  return `<section class="card theme-settings-card"><div class="card-head"><div><h2 id="theme-title">앱 테마</h2><p>화면의 색상과 분위기를 선택하세요.</p></div></div><div class="theme-options" role="radiogroup" aria-labelledby="theme-title">${Object.entries(THEMES).map(([value,option])=>`<label class="theme-option${value===current?' is-current':''}"><input type="radio" name="app-theme" data-theme-option value="${value}" ${value===current?'checked':''} ${demoMode?'disabled':''}><span class="theme-swatch theme-swatch-${value}" aria-hidden="true"><i></i><i></i><i></i></span><span class="theme-option-copy"><strong>${option.label}</strong><small>${option.description}</small></span></label>`).join('')}</div><p class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':'앱 화면과 왼쪽 상단 아이콘만 테마에 맞춰 바뀝니다. 홈 화면의 앱 아이콘은 빨강으로 고정됩니다. 선택은 저장·백업되며 인터넷을 사용하지 않습니다.'}</p></section>`;
+}
+function donorObservance(date){
+  if(!displayEnabled('donorDay'))return '';
+  return date.slice(5)==='06-14'?'세계 헌혈자의 날':date.slice(8)==='13'?'헌혈의 날':'';
+}
+function dateNames(date,holiday=holidays.day(date)){
+  const observance=donorObservance(date);
+  // Public holidays precede optional donation observances on every screen.
+  return observance?[...new Set([...holiday.names,observance])]:holiday.names;
+}
+function popupDateNames(date){
+  const names=dateNames(date).join(' · ');
+  return names?`<p class="date-popup-holiday">${escape(names)}</p>`:'';
+}
+function syncDayPopupDateNames(){
+  if(!dayPopup||!dialog.open)return;
+  const target=$('#date-popup-occasion');
+  if(!target)return;
+  const content=popupDateNames(dayPopup.date);
+  // Updating only this caption preserves the choice, focus and calculations.
+  if(target.innerHTML!==content)target.innerHTML=content;
+}
+function updateHeaderDate(){
+  const date=today(),label=$('#date-occasion');
+  $('#date-label').textContent=full(date);
+  if(label){const text=dateNames(date).join(' · ');label.textContent=text;label.hidden=!text;}
+}
+function sortControl(key,label){
+  const value=listSortOf(key);
+  return `<label class="summary-sort"><span class="sr-only">${label} 날짜 정렬</span><select data-list-sort="${key}" aria-label="${label} 날짜 정렬" ${demoMode?'disabled':''}><option value="newest" ${value==='newest'?'selected':''}>최신순</option><option value="oldest" ${value==='oldest'?'selected':''}>오래된 순</option></select></label>`;
+}
+function sortedRows(rows,key,dateOf=row=>row.start){
+  // Future plans use the requested farthest-first meaning of "오래된 순".
+  // Historical restriction lists retain their usual oldest-date-first order.
+  const direction=(listSortOf(key)==='oldest'?1:-1)*(key==='plans'?-1:1);
+  return [...rows].sort((a,b)=>direction*(dateOf(a).localeCompare(dateOf(b))||(a.end||'').localeCompare(b.end||'')||(a.id||'').localeCompare(b.id||'')));
+}
+function saveListSort(key,value){
+  if(!Object.hasOwn(LIST_SORT_DEFAULTS,key)||!validSort(value)||listSortOf(key)===value)return;
+  if(demoMode){toast('예시 체험을 종료한 뒤 정렬 방식을 변경해 주세요.');return;}
+  const before=state;state={...state,listSort:{...state.listSort,[key]:value}};
+  if(!persist())state=before;
+  else undoAction=null;
+  refreshSortedList(key);$(`[data-list-sort="${key}"]`)?.focus({preventScroll:true});
+}
+function refreshSortedList(key){
+  if(key==='archivedRestrictions'&&restrictionArchiveOpen&&dialog.open){openRestrictionArchive();return;}
+  const widgetId=key==='plans'?'plans':key==='restrictions'?'restrictions':null;
+  const target=widgetId&&$(`[data-layout-id="${widgetId}"] .screen-widget-content`);
+  if(page!=='planner'||screenEditor||!target){render();return;}
+  const wasOpen=target.querySelector?.('details')?.open;
+  target.innerHTML=key==='plans'?planListSection(inspectPlan(state.records,state.plans,state.rules,restrictions()),displayEnabled('redConnectPlan')?nearestReservationPlan()?.id:null):restrictionList();
+  const details=target.querySelector?.('details');if(details&&wasOpen!==undefined)details.open=wasOpen;
+  if(key==='plans')updatePlanSelectionUI();
 }
 function refreshLocalDay(){
   const date=today();
   if(date!==displayedDate){
     displayedDate=date;
     if(page==='planner'||page==='dashboard')render();
-    else $('#date-label').textContent=full(date);
+    else updateHeaderDate();
     if(dayPopup&&dialog.open)renderDayPopup();
   }
   clearTimeout(dayRefreshTimer);
@@ -192,16 +281,17 @@ function render(){
   applyTheme();
   layoutDrag?.destroy();layoutDrag=null;
   const calendarScrollLeft=$('.calendar-scroll')?.scrollLeft||0;
-  const plansOpen=$('#long-term-plans')?.open;
+  for(const id of sectionIds){const section=$('#'+id);if(section)sectionOpen.set(id,section.open);}
   for(const id of selectedPlanIds)if(!state.plans.some(e=>e.id===id))selectedPlanIds.delete(id);
   document.querySelectorAll('[data-page]').forEach(b=>{b.classList.toggle('active',b.dataset.page===page);b.setAttribute('aria-current',b.dataset.page===page?'page':'false');});
-  $('#date-label').textContent=full(today());$('#demo-banner').hidden=!demoMode;
+  $('#demo-banner').hidden=!demoMode;
   app.innerHTML=page==='dashboard'?dashboard():page==='planner'?planner():page==='records'?recordsPage():settingsPage();
   updateScreenEditControls();
   const calendarScroll=$('.calendar-scroll');if(calendarScroll)calendarScroll.scrollLeft=calendarScrollLeft;
-  const plans=$('#long-term-plans');if(plans&&plansOpen!==undefined)plans.open=plansOpen;
+  for(const [id,open] of sectionOpen){const section=$('#'+id);if(section)section.open=open;}
   updatePlanSelectionUI();
   updateHolidayUI();
+  if(restrictionArchiveOpen&&dialog.open)openRestrictionArchive();
   if(screenEditor&&$('#screen-widgets'))layoutDrag=installLayoutDrag($('#screen-widgets'),{
     view:window,document,setTimer:setTimeout,clearTimer:clearTimeout,requestFrame:requestAnimationFrame,cancelFrame:cancelAnimationFrame,
     onDrop:(id,before)=>moveScreenWidget(id,0,before),
@@ -304,23 +394,37 @@ function balanceBand(remaining,rules){
   const tone=types.includes('whole')?'whole':types.some(type=>type==='platelet'||type==='mixed')?'component':types.includes('plasma')?'plasma':'low';
   return {tone,types,detail:types.length?`계산량 충족: ${types.map(type=>TYPES[type].label).join(' · ')}`:`최소 계산량 ${num(Math.min(...Object.values(rules.volumes)))}mL 미만`};
 }
+function dashboardSection(id,title,content,meta=''){
+  return `<details id="dashboard-${id}" class="card dashboard-list${id==='next'?' next-card':id==='recent'?' section-gap':''}" open><summary><span class="summary-title">${title}</span>${meta}</summary><div class="dashboard-section-body">${content}</div></details>`;
+}
+function nextDonationDates(date){
+  // One in-memory result only. Fingerprint the values because edits can mutate
+  // existing arrays/rules in place; plans do not affect completed-record dates.
+  const key=JSON.stringify([date,state.records,state.rules,restrictions()]);
+  if(nextDatesCache?.key!==key){
+    const dates=Object.keys(TYPES).map(type=>({type,date:earliest(type,date,state.records,[],state.rules,1098,restrictions())}));
+    nextDatesCache={key,dates};
+  }
+  return nextDatesCache.dates;
+}
 function dashboard(){
   const date=anchorDate(),s=stats(state.records,date,state.rules),has=state.records.length>0;
+  if(!has)nextDatesCache=null;
   const band=has&&displayEnabled('balanceHighlight')?balanceBand(s.remaining,state.rules):null;
   const balanceStatus=band?`<div class="balance-status"><p>${band.detail}</p></div>`:'';
-  const earliestDates=has&&widgetShown('dashboard','next')?Object.keys(TYPES).map(type=>({type,date:earliest(type,today(),state.records,[],state.rules,1098,restrictions())})):[];
+  const earliestDates=has&&widgetShown('dashboard','next')?nextDonationDates(date):[];
   const releases=s.entries.map(e=>({e,date:releaseDate(e,state.rules)})).filter(x=>x.date>date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);
-  const upcoming=[...state.plans].sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
+  const upcoming=state.plans.filter(plan=>plan.date>=date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,3);
   const history=[...state.records].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,4);
   return '<h1 class="sr-only">한눈에 보기</h1>'+incompleteNotice()+restrictionNotice(date)+screenWidgets('dashboard',{
     'balance':`<section class="card balance-card balance-${band?.tone||(has?'plain':'empty')}"${balanceThemeStyle(s.remaining,!!band)}><div class="balance-title"><span>연간 잔여 계산량</span><span class="badge">${state.complete?'기록 입력 완료':'입력 기록 기준'}</span></div><div class="balance-number">${has?num(s.remaining):'—'}<span>mL</span></div>${has?'':'<p>헌혈 기록을 입력하면 자동으로 계산해요.</p>'}${balanceStatus}<div class="track" role="meter" aria-label="연간 계산량 사용 비율" aria-valuenow="${Math.min(100,Math.max(0,s.used/state.rules.cap*100)).toFixed(1)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${Math.min(100,s.used/state.rules.cap*100)}%"></span></div><div class="track-labels"><span>누적 ${has?num(s.used):'—'}mL</span><span>설정 한도 ${num(state.rules.cap)}mL</span></div><div class="balance-note">${s.start} ~ ${s.end}<br>이 기간의 완료 기록만 합산 · 미래 계획은 별도 계산</div></section>`,
-    'next':`<section class="card next-card"><div class="card-head"><div><h2>다음 헌혈 예상일</h2><p>오늘 이후 · 완료 기록 기준 · 계획 미포함</p></div><span class="badge">${state.complete?'계산상':'예상'}</span></div>${has?earliestDates.map(x=>`<div class="next-row">${typeLabel(x.type)}<div class="next-value">${x.date?full(x.date):'3년 내 날짜 없음'}<small>${x.date===today()?'오늘부터 계산 조건 충족':x.date?'간격·계산량·횟수 조건 반영':''}</small></div></div>`).join(''):empty('마지막 기록부터 시작해요','날짜와 헌혈 종류만 입력하면 다음 일정을 계산할 수 있어요.')}</section>`,
+    'next':dashboardSection('next','다음 헌혈 예상일',`<p class="settings-note">오늘 이후 · 완료 기록 기준 · 계획 미포함</p>${has?earliestDates.map(x=>`<div class="next-row">${typeLabel(x.type)}<div class="next-value">${x.date?full(x.date):'3년 내 날짜 없음'}<small>${x.date===today()?'오늘부터 계산 조건 충족':x.date?'간격·계산량·횟수 조건 반영':''}</small></div></div>`).join(''):empty('마지막 기록부터 시작해요','날짜와 헌혈 종류만 입력하면 다음 일정을 계산할 수 있어요.')}`,`<span class="badge">${state.complete?'계산상':'예상'}</span>`),
     'whole-count':`<div class="metric"><small>직전 1년 전혈</small><strong>${has?s.whole:'—'}<span>/ ${state.rules.wholeLimit}회</span></strong></div>`,
     'component-count':`<div class="metric"><small>직전 1년 성분헌혈</small><strong>${has?s.components:'—'}<span>회</span></strong></div>`,
     'plan-count':`<div class="metric"><small>세워 둔 계획</small><strong>${state.plans.length}<span>건</span></strong></div>`,
-    'upcoming':`<section class="card"><div class="card-head"><div><h2>다가오는 계획</h2><p>실제 기록에 영향을 주지 않는 가상 일정</p></div><button class="quiet" data-action="planner">일정 짜기 ↗</button></div>${upcoming.length?upcoming.map(e=>{const check=assess(e,[...state.records,...state.plans].filter(x=>x.id!==e.id),state.rules,restrictions());return `<div class="list-row"><div class="date">${full(e.date)}<p>${TYPES[e.type].label} · ${num(amount(e,state.rules))}mL</p></div><span class="badge" style="${check.ok?'':'background:#fff0e8;color:#a45c39'}">${check.ok?'계산 조건 충족':'조정 필요'}</span></div>`;}).join(''):empty('다음 헌혈을 미리 그려보세요','날짜와 종류를 바꾸며 앞으로의 잔여량을 비교할 수 있어요.','planner','일정 시뮬레이터 열기')}</section>`,
-    'releases':`<section class="card"><div class="card-head"><div><h2>계산에서 빠지는 기록</h2><p>기준일 이후, 1년 범위를 벗어나는 순서</p></div></div>${releases.length?releases.map(x=>`<div class="timeline-row"><div class="timeline-time">${fmt(x.date,true)}</div><div class="timeline-info">${TYPES[x.e.type].label}<strong>+ ${num(amount(x.e,state.rules))}mL</strong><small>${x.e.date} 기록이 합산에서 제외</small></div></div>`).join(''):empty('아직 표시할 기록이 없어요','헌혈 내역을 입력하면 여유가 생기는 날짜를 알려드려요.','','')}<p class="hint">그사이 헌혈을 추가하면 실제 잔여량도 함께 달라집니다.</p></section>`,
-    'recent':`<section class="card section-gap"><div class="card-head"><h2>최근 헌혈 기록</h2><button class="quiet" data-action="records">전체 보기 ↗</button></div>${history.length?history.map(e=>`<div class="list-row"><div class="date">${full(e.date)}<p>${TYPES[e.type].label}</p></div><strong>${num(amount(e,state.rules))}<small> mL</small></strong></div>`).join(''):empty('내 기록을 한곳에','여러 날짜가 있다면 복사해서 한 번에 붙여넣을 수도 있어요.','import-text','여러 기록 붙여넣기')}</section>`
+    'upcoming':dashboardSection('upcoming','다가오는 계획',`<div class="card-head"><div><p>실제 기록에 영향을 주지 않는 가상 일정</p></div><button class="quiet" data-action="planner">일정 짜기 ↗</button></div>${upcoming.length?upcoming.map(e=>{const check=assess(e,[...state.records,...state.plans].filter(x=>x.id!==e.id),state.rules,restrictions());return `<div class="list-row"><div class="date">${full(e.date)}<p>${TYPES[e.type].label} · ${num(amount(e,state.rules))}mL</p></div><span class="badge" style="${check.ok?'':'background:#fff0e8;color:#a45c39'}">${check.ok?'계산 조건 충족':'조정 필요'}</span></div>`;}).join(''):empty('다음 헌혈을 미리 그려보세요','날짜와 종류를 바꾸며 앞으로의 잔여량을 비교할 수 있어요.','planner','일정 시뮬레이터 열기')}`),
+    'releases':dashboardSection('releases','계산에서 빠지는 기록',`<p class="settings-note">기준일 이후, 1년 범위를 벗어나는 순서</p>${releases.length?releases.map(x=>`<div class="timeline-row"><div class="timeline-time">${fmt(x.date,true)}</div><div class="timeline-info">${TYPES[x.e.type].label}<strong>+ ${num(amount(x.e,state.rules))}mL</strong><small>${x.e.date} 기록이 합산에서 제외</small></div></div>`).join(''):empty('아직 표시할 기록이 없어요','헌혈 내역을 입력하면 여유가 생기는 날짜를 알려드려요.','','')}<p class="hint">그사이 헌혈을 추가하면 실제 잔여량도 함께 달라집니다.</p>`),
+    'recent':dashboardSection('recent','최근 헌혈 기록',`<div class="dashboard-section-actions"><button class="quiet" data-action="records">전체 보기 ↗</button></div>${history.length?history.map(e=>`<div class="list-row"><div class="date">${full(e.date)}<p>${TYPES[e.type].label}</p></div><strong>${num(amount(e,state.rules))}<small> mL</small></strong></div>`).join(''):empty('내 기록을 한곳에','여러 날짜가 있다면 복사해서 한 번에 붙여넣을 수도 있어요.','import-text','여러 기록 붙여넣기')}`)
   });
 }
 function calendarHTML(view,range){
@@ -333,17 +437,19 @@ function calendarHTML(view,range){
     // These cells have fixed labels. Their detailed calculations run only if opened.
     const choices=types.map(type=>({type,result:record||blocked||past?null:simulate({id:plan?.id||'__candidate__',date,type},state.records,state.plans,state.rules,restrictions())}));
     const statuses=choices.map(({type,result})=>({type,result,label:record?(record.type===type?'완료':'—'):blocked?'제한':past?'과거':result.ok?'가능':'제한',style:record?(record.type===type&&emphasize?'record-status completed-record':'record-status'):blocked?'cannot-donate':past?'past-status':result.ok?'can-donate':'cannot-donate'}));
-    const flag=record?'기록':blocked?'제한':due?'확인 필요':plan?'계획':date===currentDate?'오늘':'',holiday=holidays.day(date);
+    const flag=record?'기록':blocked?'제한':due?'확인 필요':plan?'계획':date===currentDate?'오늘':'',holiday=holidays.day(date),names=dateNames(date,holiday);
     const summary=statuses.map(s=>`${TYPES[s.type].label} ${s.label}`).join(', ');
-    html+=`<button type="button" data-calendar-date="${date}" data-action="day" data-date="${date}" data-day-summary="${summary}" class="day is-${holiday.kind} ${record?'recorded':plan?'planned':past?'past-day':''} ${blocked&&!record?'manually-restricted':''} ${record&&emphasize?'highlighted-record':''} ${selected===date?'selected':''} ${date===currentDate?'today':''}" aria-label="${full(date)}${holiday.names.length?', '+escape(holiday.names.join(' · ')):''}, ${summary} 날짜 상세 열기" aria-haspopup="dialog" aria-pressed="${selected===date}"><span class="day-heading"><span class="day-number">${Number(date.slice(8))}${record&&emphasize?'<span class="day-recorded-mark" aria-hidden="true">✓</span>':''}</span><span class="day-holiday" title="${escape(holiday.names.join(' · '))}" ${holiday.names.length?'':'hidden'}>${escape(holiday.names.join(' · '))}</span>${flag?`<span class="day-flag">${flag}</span>`:''}</span><span class="day-statuses">${statuses.map(s=>`<span class="day-status ${s.style}${plan?.type===s.type?' chosen-plan':''}" data-type="${s.type}"><span class="donation-name">${s.type==='mixed'?'혈소판<br>혈장':TYPES[s.type].label}</span><strong>${s.label}</strong></span>`).join('')}</span></button>`;
+    html+=`<button type="button" data-calendar-date="${date}" data-action="day" data-date="${date}" data-day-summary="${summary}" class="day is-${holiday.kind} ${record?'recorded':plan?'planned':past?'past-day':''} ${blocked&&!record?'manually-restricted':''} ${record&&emphasize?'highlighted-record':''} ${selected===date?'selected':''} ${date===currentDate?'today':''}" aria-label="${full(date)}${names.length?', '+escape(names.join(' · ')):''}, ${summary} 날짜 상세 열기" aria-haspopup="dialog" aria-pressed="${selected===date}"><span class="day-heading"><span class="day-number">${Number(date.slice(8))}${record&&emphasize?'<span class="day-recorded-mark" aria-hidden="true">✓</span>':''}</span><span class="day-holiday" title="${escape(names.join(' · '))}" ${names.length?'':'hidden'}>${escape(names.join(' · '))}</span>${flag?`<span class="day-flag">${flag}</span>`:''}</span><span class="day-statuses">${statuses.map(s=>`<span class="day-status ${s.style}${plan?.type===s.type?' chosen-plan':''}" data-type="${s.type}"><span class="donation-name">${s.type==='mixed'?'혈소판<br>혈장':TYPES[s.type].label}</span><strong>${s.label}</strong></span>`).join('')}</span></button>`;
   }return html;
 }
 function updateHolidayUI(){
+  updateHeaderDate();
+  syncDayPopupDateNames();
   if(page!=='planner')return;
   app.querySelectorAll('[data-calendar-date]').forEach(cell=>{
     const date=cell.dataset.calendarDate,day=holidays.day(date);
     for(const kind of ['weekday','saturday','sunday','holiday'])cell.classList.toggle('is-'+kind,day.kind===kind);
-    const label=cell.querySelector('.day-holiday'),name=day.names.join(' · ');
+    const label=cell.querySelector('.day-holiday'),name=dateNames(date,day).join(' · ');
     label.textContent=name;label.title=name;label.hidden=!name;
     cell.setAttribute('aria-label',full(date)+(name?', '+name:'')+', '+cell.dataset.daySummary+' 날짜 상세 열기');
   });
@@ -351,7 +457,7 @@ function updateHolidayUI(){
   if(!status||!button)return;
   const info=holidays.info(),visibleYears=[...new Set([...app.querySelectorAll('[data-calendar-date]')].map(cell=>cell.dataset.calendarDate.slice(0,4)))],missing=visibleYears.filter(year=>!info.years.includes(year)),known=!missing.length;
   const timestamp=value=>new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value));
-  status.textContent=holidayConsentId?'인터넷 사용 허용을 기다리고 있습니다.':info.loading?'공휴일 자료 확인 중…':!known?`${missing.join('·')}년 공휴일 자료가 아직 없습니다. 해당 연도는 주말만 표시합니다.`:info.error?'최신 공휴일을 확인하지 못했습니다. 저장된 자료로 표시합니다.':info.checkedAt?`공휴일 최근 확인: ${timestamp(info.checkedAt)}`:`공휴일 기본 자료: ${info.snapshotAt.slice(0,10)} 기준`;
+  status.textContent=holidayConsentId?'인터넷 사용 허용을 기다리고 있습니다.':info.loading?'공휴일 자료 확인 중…':!known?`${missing.join('·')}년 공휴일 자료가 아직 없습니다. 저장된 자료가 없어 주말 외 공휴일을 표시할 수 없습니다.`:info.error?'최신 공휴일을 확인하지 못했습니다. 저장된 자료로 표시합니다.':info.checkedAt?`공휴일 최근 확인: ${timestamp(info.checkedAt)}`:`공휴일 기본 자료: ${info.snapshotAt.slice(0,10)} 기준`;
   status.classList.toggle('holiday-sync-warning',!known||info.error);
   button.disabled=info.loading||!!holidayConsentId;
   button.setAttribute('aria-busy',String(info.loading));
@@ -394,23 +500,23 @@ function nearestReservationPlan(){
   return state.plans.reduce((nearest,plan)=>plan.date>=current&&!completed.has(plan.date)&&(!nearest||plan.date<nearest.date)?plan:nearest,null);
 }
 function redConnectButton(action,id=''){
-  return `<button type="button" class="secondary red-connect-button" data-action="${action}"${id?` data-id="${escape(id)}"`:''} ${demoMode?'disabled':''}>레드커넥트 열기 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 4h6v6M20 4L10 14M10 4H4v16h16v-6"/></svg></button>`;
+  return `<button type="button" class="secondary red-connect-button" data-action="${action}"${id?` data-id="${escape(id)}"`:''} ${demoMode?'disabled':''}>헌혈 예약하기 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 4h6v6M20 4L10 14M10 4H4v16h16v-6"/></svg></button>`;
 }
-function requestRedConnect(){
+function requestDonationService(){
   if(demoMode)return;
-  if(!window.BloodNoteAndroid?.requestRedConnect){toast('레드커넥트 실행은 Android 앱에서 이용할 수 있습니다.');return;}
-  try{window.BloodNoteAndroid.requestRedConnect();}
-  catch{toast('레드커넥트 실행 안내를 열지 못했습니다. 잠시 후 다시 시도해 주세요.');}
+  if(!window.BloodNoteAndroid?.requestDonationService){toast('예약·증명서 발급 연결은 Android 앱에서 이용할 수 있습니다.');return;}
+  try{window.BloodNoteAndroid.requestDonationService(donationServiceOf(state));}
+  catch{toast('접속 안내를 열지 못했습니다. 잠시 후 다시 시도해 주세요.');}
 }
 function openPlanRedConnect(id){
   if(demoMode||!displayEnabled('redConnectPlan'))return;
   if(!id||nearestReservationPlan()?.id!==id){render();toast('예정일이나 계획이 바뀌었습니다. 현재 가장 가까운 계획을 확인해 주세요.');return;}
-  requestRedConnect();
+  requestDonationService();
 }
 function openDayRedConnect(){
   if(demoMode||!displayEnabled('redConnectCalendar')||!currentDayPopup())return;
   if(dayPopup.date<today()||state.records.some(record=>record.date===dayPopup.date)){renderDayPopup();return;}
-  requestRedConnect();
+  requestDonationService();
 }
 function planRow({event:e,...r},nearestId){
   const due=e.date<=today();
@@ -502,14 +608,15 @@ function installCalendarSwipe(){
     suppressClickUntil=0;event.preventDefault();event.stopPropagation();
   },true);
 }
+function planListSection(evaluations,nearestId){return `<details id="long-term-plans" class="card section-gap plan-list"><summary><span class="summary-title">나의 장기 계획 <span class="badge">${evaluations.length}건</span></span>${sortControl('plans','장기 계획')}</summary><div class="card-head plan-list-head"><div><p>예정일이 오늘이거나 지난 계획은 ‘헌혈 기록으로 남기기’ 또는 ‘삭제’를 선택하세요.</p></div><button class="secondary small" data-action="auto-plan">월별 초안 만들기</button></div>${evaluations.length?planSelectionToolbar()+sortedRows(evaluations,'plans',item=>item.event.date).map(evaluation=>planRow(evaluation,nearestId)).join(''):empty('아직 세워 둔 계획이 없어요','달력에서 날짜를 누르고 헌혈 종류를 선택해 계획을 추가하세요.','','')}</details>`;}
 function planner(){
   const view=calendarView(),range=calendarWindow(calendarAnchor,view);
   const evaluations=inspectPlan(state.records,state.plans,state.rules,restrictions()),invalid=evaluations.filter(x=>!x.ok).length,nearestId=displayEnabled('redConnectPlan')?nearestReservationPlan()?.id:null;
   const bars=widgetShown('planner','annual')?Array.from({length:12},(_,i)=>{const [y,m]=today().split('-').map(Number);const d=new Date(Date.UTC(y,m+i,0)).toISOString().slice(0,10);const s=stats([...state.records,...state.plans],d,state.rules);return {month:Number(d.slice(5,7)),...s};}):[];
   return '<h1 class="sr-only">일정 시뮬레이터</h1>'+incompleteNotice()+(invalid?`<div class="notice error">계획 ${invalid}건이 계산 조건을 충족하지 않습니다. 아래 계획 목록에서 날짜·종류를 조정해 주세요. 뒤 일정도 모든 계획을 실행한다고 가정한 값입니다.</div>`:'')+screenWidgets('planner',{
     calendar:widgetShown('planner','calendar')?`<section class="card calendar-card" data-view="${view}"><div class="calendar-head"><div><h2 aria-live="polite">${Number(calendarMonth.slice(0,4))}년 ${Number(calendarMonth.slice(5))}월</h2></div>${calendarNavigation(range)}</div><div class="calendar-scroll" tabindex="0" role="region" aria-label="네 종류의 헌혈 가능 여부가 표시된 월간 달력"><div class="calendar calendar-${view}">${calendarHTML(view,range)}</div></div><div class="legend day-legend" aria-label="날짜 배경색 안내">${displayEnabled('recordHighlight')?'<span><i class="done" aria-hidden="true">✓</i>헌혈 완료</span>':''}<span><i class="offday"></i>토·일요일 / 공휴일(대체·임시 포함)</span><span><i class="manual-restriction"></i>등록한 헌혈 제한</span></div><div class="legend"><span><i class="yes"></i>가능</span><span><i class="limited"></i>제한</span><span><i class="no"></i>과거</span><span><i class="plan"></i>기존 계획</span></div><div class="holiday-sync"><p id="holiday-status" role="status" aria-live="polite"></p><button type="button" class="holiday-refresh" data-action="refresh-holidays" aria-label="공휴일 수동 갱신" aria-describedby="holiday-status" title="공휴일 수동 갱신"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 11 A7 7 0 0 1 18 7 M18 3 V7 H14 M19 13 A7 7 0 0 1 6 17 M6 21 V17 H10"></path></svg></button></div><p class="hint holiday-source">🔃 버튼을 누르고 이번 갱신의 인터넷 사용을 허용한 경우에만 최신 공휴일을 확인합니다. 그전까지 저장된 자료로 표시합니다. 임시공휴일은 자료 제공처에 등록된 뒤 갱신할 수 있습니다. <a href="https://github.com/hyunbinseo/holidays-kr" target="_blank" rel="noopener noreferrer">자료 출처 ↗</a></p><hr class="divider"><label>다른 날짜로 바로 이동<input id="sim-date" type="date" value="${selected}" min="1900-01-01" max="2199-12-31"></label></section>`:'',
-    plans:`<details id="long-term-plans" class="card section-gap plan-list"><summary>나의 장기 계획 <span class="badge">${evaluations.length}건</span></summary><div class="card-head plan-list-head"><div><p>예정일이 오늘이거나 지난 계획은 ‘헌혈 기록으로 남기기’ 또는 ‘삭제’를 선택하세요.</p></div><button class="secondary small" data-action="auto-plan">월별 초안 만들기</button></div>${evaluations.length?planSelectionToolbar()+evaluations.map(evaluation=>planRow(evaluation,nearestId)).join(''):empty('아직 세워 둔 계획이 없어요','달력에서 날짜를 누르고 헌혈 종류를 선택해 계획을 추가하세요.','','')}</details>`,
-    restrictions:restrictionList(),
+    plans:widgetShown('planner','plans')?planListSection(evaluations,nearestId):'',
+    restrictions:widgetShown('planner','restrictions')?restrictionList():'',
     annual:`<section class="card section-gap"><div class="card-head"><div><h2>앞으로 12개월의 연간 계산량</h2><p>완료 기록과 모든 계획을 포함한 월말 예상값 · 한도 ${num(state.rules.cap)}mL</p></div></div><div class="annual-bars" role="img" aria-label="${bars.map(b=>`${b.month}월 ${b.used}mL`).join(', ')}">${bars.map(b=>`<div class="annual-bar ${b.used>state.rules.cap?'over':''}" title="${b.end}: ${num(b.used)}mL"><span style="height:${Math.max(3,Math.min(85,b.used/state.rules.cap*85))}px"></span><small>${b.month}월</small></div>`).join('')}</div></section>`
   });
 }
@@ -519,6 +626,11 @@ function moveRecordPage(index){
   $('#records-list')?.scrollIntoView({block:'start',behavior:'auto'});
   $('#record-page')?.focus({preventScroll:true});
 }
+function recordCounts(){
+  const counts={whole:0,plasma:0,platelet:0,mixed:0};
+  for(const record of state.records)counts[record.type]++;
+  return `<table class="donation-counts" aria-label="등록된 전체 완료 기록의 헌혈 종류별 횟수"><thead><tr>${Object.keys(TYPES).map(type=>`<th scope="col">${type==='mixed'?'혈소판<br>혈장':TYPES[type].label}</th>`).join('')}</tr></thead><tbody><tr>${Object.keys(TYPES).map(type=>`<td data-count-type="${type}"><strong>${num(counts[type])}</strong>회</td>`).join('')}</tr></tbody></table>`;
+}
 function recordsPage(){
   const list=state.records.filter(e=>recordFilter==='all'||e.type===recordFilter).sort((a,b)=>b.date.localeCompare(a.date));
   const pages=Math.max(1,Math.ceil(list.length/RECORDS_PER_PAGE));
@@ -527,18 +639,29 @@ function recordsPage(){
   const pagination=list.length?`<nav class="record-pagination" aria-label="헌혈 기록 페이지"><button class="secondary small" data-action="records-prev" ${recordPageIndex===0?'disabled':''} aria-label="이전 기록 페이지">‹ 이전</button><label><span class="sr-only">기록 페이지 선택</span><select id="record-page">${Array.from({length:pages},(_,i)=>`<option value="${i}" ${i===recordPageIndex?'selected':''}>${i+1} / ${pages} 페이지</option>`).join('')}</select></label><button class="secondary small" data-action="records-next" ${recordPageIndex===pages-1?'disabled':''} aria-label="다음 기록 페이지">다음 ›</button><p role="status" aria-live="polite">${recordFilter==='all'?'전체':'선택한 종류'} ${list.length}건 중 ${start+1}–${start+visible.length}건</p></nav>`:'';
   return '<h1 class="sr-only">헌혈 기록</h1>'+`
     <div class="notice"><label class="checkline"><input id="history-complete" type="checkbox" ${state.complete?'checked':''}>최근 1년의 헌혈 기록을 빠짐없이 입력했습니다.</label><p class="hint">처음에는 최소 최근 1년 내역을 입력해 주세요. 누락된 기록은 잔여량과 예상일에 영향을 줍니다.</p></div>
-    <section class="card"><div class="record-entry-grid" role="group" aria-label="헌혈 기록 입력과 증명서"><button type="button" class="primary record-entry-button" data-action="add-record">+ 기록 추가</button><button type="button" class="secondary record-entry-button" data-action="issue-certificate" ${demoMode?'disabled':''}><span>헌혈증명서 발급받기</span><small>(레드커넥트 실행)</small></button><button type="button" class="secondary record-entry-button" data-action="import-text">여러 기록 추가하기</button><button type="button" class="secondary record-entry-button" data-action="import-certificate">증명서 PDF 등록하기</button></div><div id="records-list" class="card-head section-gap"><span class="muted" style="font-size:12px">총 ${state.records.length}건</span><select id="record-filter" style="width:150px"><option value="all" ${recordFilter==='all'?'selected':''}>모든 종류</option>${typeOptions(recordFilter)}</select></div>${list.length?`<div class="table-scroll"><table class="record-table" role="table" aria-label="완료한 헌혈 기록"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">헌혈일</th><th role="columnheader" scope="col">종류</th><th role="columnheader" scope="col">계산량</th><th role="columnheader" scope="col">관리</th></tr></thead><tbody role="rowgroup">${visible.map(e=>`<tr role="row"><td role="cell" class="record-date"><strong>${fmt(e.date,true)}</strong><br><small>${'일월화수목금토'[weekday(e.date)]}요일</small></td><td role="cell" class="record-type">${typeLabel(e.type)}</td><td role="cell" class="record-amount"><span class="record-amount-label">계산량 </span>${num(amount(e,state.rules))}mL</td><td role="cell" class="record-actions"><div class="actions"><button class="icon-button" data-action="edit-record" data-id="${escape(e.id)}">수정</button><button class="icon-button danger-text" data-action="delete-record" data-id="${escape(e.id)}">삭제</button></div></td></tr>`).join('')}</tbody></table></div>${pagination}`:empty('날짜와 종류, 두 가지만 입력하세요','공식 계정 자동 조회는 연결되어 있지 않습니다. 직접 입력하거나 날짜·종류가 있는 글을 붙여넣어 시작할 수 있어요.')}<p class="intro-note">표의 mL는 설정한 연간 한도 계산값입니다. 실제 성분 채혈액 전체 부피와 같은 의미는 아닙니다.</p></section>`;
+    <section class="card"><div class="record-entry-grid" role="group" aria-label="헌혈 기록 입력과 증명서"><button type="button" class="primary record-entry-button" data-action="add-record">+ 기록 추가</button><button type="button" class="secondary record-entry-button" data-action="issue-certificate" ${demoMode?'disabled':''}><span>헌혈증명서 발급받기</span></button><button type="button" class="secondary record-entry-button" data-action="import-text">여러 기록 추가하기</button><button type="button" class="secondary record-entry-button" data-action="import-certificate">증명서 PDF 등록하기</button></div>${recordCounts()}<div id="records-list" class="card-head section-gap"><span class="muted" style="font-size:12px">총 ${state.records.length}건</span><select id="record-filter" style="width:150px"><option value="all" ${recordFilter==='all'?'selected':''}>모든 종류</option>${typeOptions(recordFilter)}</select></div>${list.length?`<div class="table-scroll"><table class="record-table" role="table" aria-label="완료한 헌혈 기록"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">헌혈일</th><th role="columnheader" scope="col">종류</th><th role="columnheader" scope="col">계산량</th><th role="columnheader" scope="col">관리</th></tr></thead><tbody role="rowgroup">${visible.map(e=>`<tr role="row"><td role="cell" class="record-date"><strong>${fmt(e.date,true)}</strong><br><small>${'일월화수목금토'[weekday(e.date)]}요일</small></td><td role="cell" class="record-type">${typeLabel(e.type)}</td><td role="cell" class="record-amount"><span class="record-amount-label">계산량 </span>${num(amount(e,state.rules))}mL</td><td role="cell" class="record-actions"><div class="actions"><button class="icon-button" data-action="edit-record" data-id="${escape(e.id)}">수정</button><button class="icon-button danger-text" data-action="delete-record" data-id="${escape(e.id)}">삭제</button></div></td></tr>`).join('')}</tbody></table></div>${pagination}`:empty('날짜와 종류, 두 가지만 입력하세요','공식 계정 자동 조회는 연결되어 있지 않습니다. 직접 입력하거나 날짜·종류가 있는 글을 붙여넣어 시작할 수 있어요.')}<p class="intro-note">표의 mL는 설정한 연간 한도 계산값입니다. 실제 성분 채혈액 전체 부피와 같은 의미는 아닙니다.</p></section>`;
 }
-function settingsPage(){return heading('MAKE IT YOURS','계산 기준과 보관','내 기준을 확인하고 기록을 안전하게 옮기세요.')+themeSettings()+`
+function settingsPage(){return heading('MAKE IT YOURS','계산 기준과 보관','내 기준을 확인하고 기록을 안전하게 옮기세요.')+themeSettings()+donationServiceSettings()+`
   <section class="card start-page-card"><div class="card-head"><div><h2>첫 화면 설정</h2><p>앱을 새로 열 때 표시할 화면을 선택하세요.</p></div></div><label for="start-page">앱 시작 화면</label><select id="start-page" aria-describedby="start-page-help" ${demoMode?'disabled':''}>${Object.entries(START_PAGES).map(([value,label])=>`<option value="${value}" ${startPageChoiceOf(demoMode?realState:state)===value?'selected':''}>${label}</option>`).join('')}</select><p id="start-page-help" class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':startPageChoiceOf(state)==='last'?'종료 전에 보던 화면(설정 포함)으로 다시 시작합니다. 팝업과 저장 전 입력은 다시 열지 않습니다. 선택은 자동 저장되며 백업에도 포함됩니다.':'선택하면 자동 저장됩니다. 앱을 다시 열어도 유지되며, 백업에도 포함됩니다.'}</p></section>
   <section class="card display-options-card"><div class="card-head"><div><h2>화면 표시</h2><p>표시 항목을 각각 켜거나 끌 수 있습니다.</p></div></div>${Object.entries(DISPLAY_OPTIONS).map(([key,option])=>{const enabled=displayEnabled(key,demoMode?realState:state);return `<label class="display-toggle" for="display-${key}"><span class="display-toggle-copy"><strong>${option.label}</strong><small id="display-${key}-help">${option.description}</small></span><span class="display-toggle-control"><span aria-hidden="true">${enabled?'켬':'끔'}</span><input type="checkbox" role="switch" id="display-${key}" data-display-option="${key}" aria-describedby="display-${key}-help" ${enabled?'checked':''} ${demoMode?'disabled':''}></span></label>`;}).join('')}<p class="settings-note">${demoMode?'예시 체험을 종료한 뒤 변경할 수 있습니다.':'선택은 자동 저장되고 백업에 포함됩니다. 표시를 꺼도 기록과 계산 결과는 유지됩니다.'}</p></section>
-  <section class="card app-update-card"><div class="card-head"><div><h2>앱 업데이트</h2><p>현재 v3.0.1 · GitHub 정식 배포판</p></div></div><p class="settings-note">버튼을 누르고 데이터 사용 안내에 동의한 경우에만 새 버전을 확인합니다. 새 APK의 버전과 용량을 확인한 뒤 다운로드를 선택할 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button type="button" class="primary small" data-action="check-update" ${demoMode?'disabled':''}>업데이트 확인</button></div><p class="settings-note">보안 설정·앱 설치 제한에 따라 업데이트가 완료되지 않을 수 있습니다. 개인이 제작한 비공식 앱이며, 사용·설치·업데이트는 이용자 본인의 판단과 책임으로 진행해 주세요. 중요한 기록은 먼저 백업해 주세요.</p></section>
+  <section class="card app-update-card"><div class="card-head"><div><h2>앱 업데이트</h2><p>현재 v4.0.1 · GitHub 정식 배포판</p></div></div><p class="settings-note">버튼을 누르고 데이터 사용 안내에 동의한 경우에만 새 버전을 확인합니다. 새 APK의 버전과 용량을 확인한 뒤 다운로드를 선택할 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button type="button" class="primary small" data-action="check-update" ${demoMode?'disabled':''}>업데이트 확인</button></div><p class="settings-note">보안 설정·앱 설치 제한에 따라 업데이트가 완료되지 않을 수 있습니다. 개인이 제작한 비공식 앱이며, 사용·설치·업데이트는 이용자 본인의 판단과 책임으로 진행해 주세요. 중요한 기록은 먼저 백업해 주세요.</p></section>
   <div class="settings-grid"><section class="card"><div class="card-head"><div><h2>연간 계산 기준</h2><p>사용자 지정 계산값을 사용합니다.</p></div></div><form id="rules-form" class="form-stack"><label>연간 한도 (mL)<input name="cap" type="number" min="1" max="100000" step="1" required value="${state.rules.cap}"></label><div class="rules-table"><span class="rule-label">헌혈 종류</span><small>계산량 (mL)</small><small>이후 간격 (일)</small>${Object.entries(TYPES).map(([key,t])=>`<span class="rule-label">${t.label}</span><input aria-label="${t.label} 계산량" name="volume-${key}" type="number" min="1" max="10000" required value="${state.rules.volumes[key]}"><input aria-label="${t.label} 이후 간격" name="wait-${key}" type="number" min="1" max="1000" required value="${state.rules.waits[key]}">`).join('')}</div><div class="two-fields"><label>직전 1년 전혈 한도 (회)<input name="wholeLimit" type="number" min="1" max="1000" value="${state.rules.wholeLimit}" required></label><label>혈소판·혈소판 혈장 성분횟수 조건<input name="componentLimit" type="number" min="1" max="1000" value="${state.rules.componentLimit}" required></label></div><label>정확히 1년 전 같은 날짜의 기록<select name="boundary"><option value="exclude" ${state.rules.boundary==='exclude'?'selected':''}>합산에서 제외</option><option value="include" ${state.rules.boundary==='include'?'selected':''}>합산에 포함</option></select></label><p class="settings-note">1년은 365일 고정이 아닌 달력의 전년 같은 날짜로 계산합니다. 2월 29일의 전년 기준일은 2월 28일입니다. 경계일 포함 여부는 기관 안내와 맞춰 주세요.</p><div class="card-foot"><button type="button" class="secondary small" data-action="reset-rules">처음 기준으로</button><button class="primary small" type="submit">계산 기준 저장</button></div></form></section>
-  <div><section class="card"><div class="card-head"><h2>백업과 복원</h2><span class="badge">내 기기 보관</span></div><p class="settings-note">기록·계획·헌혈 제한 기간·계산 설정과 저장된 공휴일 자료는 기기 안에서 암호화해 보관합니다. 앱이나 앱 데이터를 삭제하면 기록도 삭제됩니다. 기기를 바꾸거나 앱을 삭제하기 전에 백업해 주세요. 새 백업에는 기록·계획·계산 기준·헌혈 제한 기간을 비밀번호로 암호화해 넣습니다. 비밀번호를 잊으면 백업을 복원할 수 없습니다. 이전 JSON 백업도 불러올 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button class="primary small" data-action="export-backup">암호화 백업 저장</button><button class="secondary small" data-action="import-backup">백업 불러오기</button><button class="secondary small" data-action="import-certificate">증명서 PDF 불러오기</button></div><p class="settings-note">기기에 저장한 대한적십자사 헌혈확인증명서(개인) PDF에서 날짜·종류를 읽어 검토 후 등록합니다. 인터넷 없이 동작하며 Android 15 이상에서 사용할 수 있습니다. 사진·스캔본은 지원하지 않습니다. 원본 파일은 변경하지 않습니다.</p><input type="file" id="backup-file" accept="application/json,.json" hidden><hr class="divider"><h3>연간채혈량 계산기 · 안드로이드 3.0.1 · 작은 월간 달력</h3><p class="settings-note">화면과 계산 기능은 인터넷 없이 사용할 수 있습니다. 공휴일 🔃 갱신과 앱 업데이트 확인은 매번 인터넷 사용 안내에 동의해야 연결됩니다. 취소하면 저장된 자료를 유지합니다. 외부 링크는 브라우저에서 열립니다. 백업은 파일 선택창에서 기기 저장 공간을 선택하면 데이터가 필요하지 않습니다.</p><p class="settings-note">새로 설치하면 기록과 계획은 비어 있습니다. 이전 앱에서 저장한 기록·계획은 위의 ‘백업 불러오기’로 옮겨 주세요. 휴대폰과 태블릿 화면 폭에 맞춰 배치가 자동으로 바뀝니다.</p><div class="actions"><button class="quiet" data-action="install">앱 정보 · 기록 옮기기</button><button class="quiet" data-action="demo">${demoMode?'예시 체험 종료':'예시로 둘러보기'}</button></div></section>
-  <section class="card section-gap"><h2>앱 정보와 출처</h2><p class="settings-note">연간채혈량 계산기는 개인이 제작한 비공식 기록·계획 도구입니다. 대한적십자사 등 헌혈기관의 승인·인증을 받은 앱이 아닙니다.</p><button type="button" class="secondary license-menu" data-action="open-licenses" aria-haspopup="dialog"><span>오픈소스 라이선스</span><span aria-hidden="true">›</span></button><p class="settings-note">공휴일 자료의 출처와 라이선스 전문을 인터넷 없이 확인할 수 있습니다.</p></section>
-  <section class="card section-gap"><h2>계산에 포함되는 것</h2><div class="settings-note"><p>① 선택한 기준일 직전 1년의 계산량<br>② 직전 헌혈 종류에 따른 대기 간격<br>③ 전혈 횟수와 혈소판·혈소판 혈장의 성분헌혈 횟수 조건<br>④ 앞선 가상 일정 및 뒤에 잡힌 계획에 미치는 영향<br>⑤ 직접 등록한 헌혈 제한 기간</p><p>기본값 2,160 / 430 / 90 / 45mL는 사용자가 제시한 기준입니다. 실제 성분 채혈액 전체 부피를 뜻하지 않습니다.</p><p>혈소판·혈소판 혈장 계획은 직전 1년의 모든 성분헌혈 횟수(혈장 포함)에 새 1회를 더해 24회 조건을 확인합니다. 혈장만 선택할 때는 이 횟수 제한을 적용하지 않습니다.</p><p><a href="https://emi.bloodinfo.net/emi4.do?lang=ko" target="_blank" rel="noopener noreferrer">대한적십자사 헌혈 자격조건 ↗</a>의 간격·횟수 안내를 참고했습니다. 계산이 맞아도 문진·검사 등에서 헌혈이 제한될 수 있습니다.</p><p>공식 헌혈 기록 자동 조회, 자동 예약, 검사 결과 연동은 제공하지 않습니다.</p></div></section></div></div>`;}
+  <div><section class="card"><div class="card-head"><h2>백업과 복원</h2><span class="badge">내 기기 보관</span></div><p class="settings-note">기록·계획·헌혈 제한 기간·계산 설정과 저장된 공휴일 자료는 기기 안에서 암호화해 보관합니다. 앱이나 앱 데이터를 삭제하면 기록도 삭제됩니다. 기기를 바꾸거나 앱을 삭제하기 전에 백업해 주세요. 새 백업에는 기록·계획·계산 기준·헌혈 제한 기간을 비밀번호로 암호화해 넣습니다. 비밀번호를 잊으면 백업을 복원할 수 없습니다. 이전 JSON 백업도 불러올 수 있습니다.</p><div class="card-foot" style="justify-content:start"><button class="primary small" data-action="export-backup">암호화 백업 저장</button><button class="secondary small" data-action="import-backup">백업 불러오기</button><button class="secondary small" data-action="import-certificate">증명서 PDF 불러오기</button></div><p class="settings-note">기기에 저장한 대한적십자사 헌혈확인증명서(개인) PDF에서 날짜·종류를 읽어 검토 후 등록합니다. 인터넷 없이 동작하며 Android 15 이상에서 사용할 수 있습니다. 사진·스캔본은 지원하지 않습니다. 원본 파일은 변경하지 않습니다.</p><input type="file" id="backup-file" accept="application/json,.json" hidden><hr class="divider"><h3>헌혈 계산기 · 안드로이드 4.0.1 · 작은 월간 달력</h3><p class="settings-note">화면과 계산 기능은 인터넷 없이 사용할 수 있습니다. 공휴일 🔃 갱신과 앱 업데이트 확인은 매번 인터넷 사용 안내에 동의해야 연결됩니다. 취소하면 저장된 자료를 유지합니다. 예약·증명서 발급·전자문진과 모든 외부 링크도 매번 데이터 사용 안내를 확인한 뒤 엽니다. 백업은 파일 선택창에서 기기 저장 공간을 선택하면 데이터가 필요하지 않습니다.</p><p class="settings-note">새로 설치하면 기록과 계획은 비어 있습니다. 이전 앱에서 저장한 기록·계획은 위의 ‘백업 불러오기’로 옮겨 주세요. 휴대폰과 태블릿 화면 폭에 맞춰 배치가 자동으로 바뀝니다.</p><div class="actions"><button class="quiet" data-action="install">앱 정보 · 기록 옮기기</button><button class="quiet" data-action="demo">${demoMode?'예시 체험 종료':'예시로 둘러보기'}</button></div></section>
+  <section class="card section-gap"><h2>앱 정보와 출처</h2><p class="settings-note">헌혈 계산기는 개인이 제작한 비공식 기록·계획 도구입니다. 대한적십자사 등 헌혈기관의 승인·인증을 받은 앱이 아닙니다.</p><button type="button" class="secondary license-menu" data-action="open-licenses" aria-haspopup="dialog"><span>오픈소스 라이선스</span><span aria-hidden="true">›</span></button><p class="settings-note">공휴일 자료의 출처와 라이선스 전문을 인터넷 없이 확인할 수 있습니다.</p></section>
+  <section class="card section-gap"><h2>계산에 포함되는 것</h2><div class="settings-note"><p>① 오늘 기준 직전 1년의 계산량<br>② 직전 헌혈 종류에 따른 대기 간격<br>③ 전혈 횟수와 혈소판·혈소판 혈장의 성분헌혈 횟수 조건<br>④ 앞선 가상 일정 및 뒤에 잡힌 계획에 미치는 영향<br>⑤ 직접 등록한 헌혈 제한 기간</p><p>기본값 2,160 / 430 / 90 / 45mL는 사용자가 제시한 기준입니다. 실제 성분 채혈액 전체 부피를 뜻하지 않습니다.</p><p>혈소판·혈소판 혈장 계획은 직전 1년의 모든 성분헌혈 횟수(혈장 포함)에 새 1회를 더해 24회 조건을 확인합니다. 혈장만 선택할 때는 이 횟수 제한을 적용하지 않습니다.</p><p><a href="${QUALIFICATION_URL}" target="_blank" rel="noopener noreferrer">대한적십자사 헌혈 자격조건 ↗</a>의 간격·횟수 안내를 참고했습니다. 계산이 맞아도 문진·검사 등에서 헌혈이 제한될 수 있습니다.</p><p>공식 헌혈 기록 자동 조회, 자동 예약, 검사 결과 연동은 제공하지 않습니다.</p></div></section></div></div>`;}
 
-function openDialog(title,description,content){dayPopup=null;restrictionEditor=null;layoutPrompt=null;dialog.classList.remove('calendar-date-dialog');dialog.removeAttribute?.('aria-labelledby');$('#dialog-content').innerHTML=`<div class="dialog-head"><div><h2>${title}</h2>${description?`<p>${description}</p>`:''}</div><button class="close" data-action="close-dialog" aria-label="닫기">×</button></div>${content}`;if(!dialog.open)dialog.showModal();}
+function openDialog(title,description,content){backupTask++;restrictionArchiveOpen=false;dayPopup=null;restrictionEditor=null;layoutPrompt=null;dialog.classList.remove('calendar-date-dialog');dialog.removeAttribute?.('aria-labelledby');$('#dialog-content').innerHTML=`<div class="dialog-head"><div><h2>${title}</h2>${description?`<p>${description}</p>`:''}</div><button class="close" data-action="close-dialog" aria-label="닫기">×</button></div>${content}`;if(!dialog.open)dialog.showModal();}
+function showFirstRunNotice(){
+  if(storageFailed)return;
+  try{
+    if(appStorage.getItem(ONBOARDING_KEY)==='1')return;
+    // Mark before display so process death, updates and backup restores cannot replay it.
+    appStorage.setItem(ONBOARDING_KEY,'1');
+  }catch{toast('최초 안내 표시 여부를 저장하지 못했습니다. 저장 공간을 확인해 주세요.');return;}
+  // Earlier releases already wrote a saved-state entry, even with zero records.
+  if(hadSavedState)return;
+  openDialog('처음 이용하시는 분께','헌혈 계산기 이용 안내',`<div class="first-run-notice"><section><h3>비전공자가 만든 비공식 앱입니다</h3><p>헌혈기관의 승인·인증을 받은 앱이 아닙니다. 앱 사용과 데이터 관리의 권한·책임은 사용자에게 있습니다. 실제 헌혈 가능 여부는 헌혈기관의 문진과 검사로 결정됩니다.</p></section><section><h3>기록은 이 기기에 보관합니다</h3><p>제작자는 개인정보를 수집하지 않으며, 별도로 운영하는 데이터 저장 서버가 없습니다. 헌혈 기록과 설정은 이 기기에 암호화해 보관하며, PDF와 암호를 외부로 전송하지 않습니다.</p><p>외부 사이트·앱, 공휴일 갱신과 업데이트는 데이터 사용 안내를 확인한 뒤 연결됩니다. 외부 서비스의 개인정보 처리는 해당 서비스의 정책을 따릅니다.</p></section><section><h3>처음 시작하는 방법</h3><p><strong>헌혈이 처음이라면</strong> ‘일정 시뮬레이터’의 달력에서 날짜와 헌혈 종류를 선택해 계획을 등록하세요. 실제 헌혈을 마친 뒤 ‘나의 장기 계획’에서 ‘헌혈 기록으로 남기기’를 누르면 됩니다.</p><p><strong>헌혈 경험이 있다면</strong> ‘헌혈 기록’ → ‘헌혈증명서 발급받기’에서 증명서 PDF를 발급받아 기기에 저장한 뒤, ‘증명서 PDF 등록하기’로 불러오세요. 내용을 검토하고 등록하면 기존 기록을 한 번에 입력할 수 있습니다.</p></section></div><div class="card-foot"><button type="button" class="primary" data-action="close-dialog">확인하고 시작하기</button></div>`);
+}
 function openLicenses(){
   openDialog('오픈소스 라이선스','앱에 포함된 고지이며, 인터넷 연결 없이 읽을 수 있습니다.',
     `<section class="license-notice" aria-labelledby="holiday-license-title"><h3 id="holiday-license-title">holidays-kr · 공휴일 데이터</h3><p class="settings-note">저작권자: Hyunbin Seo<br>라이선스: MIT<br>기본 공휴일 자료: 2026. 10. 17. 기준 (2018–2027년)</p><p class="settings-note"><a href="https://github.com/hyunbinseo/holidays-kr" target="_blank" rel="noopener noreferrer">원본 프로젝트 ↗</a> · <a href="https://github.com/hyunbinseo/holidays-kr/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">원본 라이선스 ↗</a><br>외부 링크를 누르면 브라우저가 열리며 인터넷을 사용합니다.</p><pre class="license-text" aria-label="공휴일 데이터 출처 및 MIT 라이선스 전문">${escape(HOLIDAY_DATA_LICENSE)}</pre></section><section class="license-notice"><h3>기타 구성 요소</h3><p class="settings-note">별도의 JavaScript 라이브러리나 CSS 프레임워크는 포함하지 않습니다. 화면 표시, PDF 읽기, 암호화와 기본 글꼴은 기기에 설치된 Android·WebView 기능을 사용합니다.</p><p class="settings-note">공휴일 자료는 사용자가 수동 갱신을 허용했을 때만 내려받습니다. 이 메뉴를 여는 것만으로는 갱신하지 않습니다.</p></section><div class="card-foot"><button type="button" class="primary" data-action="close-dialog">닫기</button></div>`);
@@ -555,14 +678,24 @@ function restrictionDayDetails(date){
   return active.length?`<section class="restriction-day"><h3>등록한 헌혈 제한</h3>${active.map(restrictionRow).join('')}</section>`:'';
 }
 function restrictionList(){
-  const rows=restrictions();
-  return `<details class="card section-gap restriction-list"><summary>헌혈 제한 기간 <span class="badge">${rows.length}건</span></summary>${rows.length?[...rows].sort((a,b)=>b.start.localeCompare(a.start)).map(restrictionRow).join(''):'<p class="settings-note">등록된 헌혈 제한 기간이 없습니다.</p>'}</details>`;
+  const {current}=restrictionGroups();
+  return `<section class="card section-gap restriction-card"><details id="restriction-periods" class="restriction-list"><summary><span class="summary-title">헌혈 제한 기간 <span class="badge">${current.length}건</span></span>${sortControl('restrictions','헌혈 제한 기간')}</summary>${current.length?sortedRows(current,'restrictions').map(restrictionRow).join(''):'<p class="settings-note">현재 1년 범위 안에 등록된 헌혈 제한 기간이 없습니다.</p>'}<div class="restriction-archive-link"><button type="button" class="quiet" data-action="restriction-archive" aria-haspopup="dialog">과거 전체보기 ↗</button></div></details></section>`;
+}
+function restrictionGroups(){
+  const start=stats([],today(),state.rules).start,current=[],archived=[];
+  for(const item of restrictions())(item.end<start?archived:current).push(item);
+  return {current,archived};
+}
+function openRestrictionArchive(){
+  const rows=sortedRows(restrictionGroups().archived,'archivedRestrictions');
+  openDialog('과거 헌혈 제한 내역','종료일이 오늘 기준 1년 범위보다 오래된 내역입니다. 삭제하지 않고 기기에 보관합니다.',`<div class="archive-toolbar"><span class="badge">${rows.length}건</span>${sortControl('archivedRestrictions','과거 헌혈 제한')}</div><div class="archive-restrictions">${rows.length?rows.map(restrictionRow).join(''):'<p class="settings-note">과거 헌혈 제한 내역이 없습니다.</p>'}</div><div class="card-foot"><button type="button" class="primary" data-action="close-dialog">닫기</button></div>`);
+  restrictionArchiveOpen=true;
 }
 function openRestrictionEditor(date,id=null){
   const item=id?restrictions().find(row=>row.id===id):null;
   if(id&&!item){toast('이 제한 기간은 이미 삭제되었습니다.');return;}
   const start=item?.start||date;if(!validAnchorDate(start))return;
-  const returnDay=dayPopup?{...dayPopup}:null,days=item?daysBetween(item.start,item.end)+1:1;
+  const returnArchive=restrictionArchiveOpen,returnDay=dayPopup?{...dayPopup}:null,days=item?daysBetween(item.start,item.end)+1:1;
   openDialog('헌혈 제한 설정','',`<button type="button" class="quiet restriction-back" data-action="restriction-back">‹ ${returnDay?'날짜 선택으로':'돌아가기'}</button><form id="restriction-form" class="form-stack" autocomplete="off" novalidate>
     <label>시작일<input name="start" type="date" value="${start}" min="1900-01-01" max="2199-12-31" required></label>
     <label>헌혈금지사유 <span class="muted">(선택)</span><input name="reason" type="text" value="${escape(item?.reason||'')}" maxlength="80" placeholder="사유를 입력하세요" autocomplete="off" spellcheck="false"></label>
@@ -570,7 +703,7 @@ function openRestrictionEditor(date,id=null){
     <div class="restriction-period"><span>제한 적용 기간</span><strong id="restriction-range"></strong></div>
     <p id="restriction-feedback" class="form-feedback error" role="alert" hidden></p>
     <div class="date-popup-footer"><button type="button" class="secondary" data-action="restriction-back">취소</button><button type="submit" class="primary">제한 저장</button></div></form>`);
-  restrictionEditor={id,returnDay,snapshot:JSON.stringify(restrictions())};
+  restrictionEditor={id,returnDay,returnArchive,snapshot:JSON.stringify(restrictions())};
   const form=$('#restriction-form');
   form.addEventListener('input',()=>updateRestrictionForm(false));
   form.onsubmit=event=>{event.preventDefault();saveRestriction();};
@@ -596,8 +729,9 @@ function stepRestrictionDays(delta){
 }
 function returnFromRestrictionEditor(){
   if(!restrictionEditor)return;
-  const previous=restrictionEditor.returnDay;restrictionEditor=null;
-  if(previous){dayPopup={...previous,snapshot:planSnapshot()};renderDayPopup();}
+  const previous=restrictionEditor.returnDay,archive=restrictionEditor.returnArchive;restrictionEditor=null;
+  if(archive){openRestrictionArchive();}
+  else if(previous){dayPopup={...previous,snapshot:planSnapshot()};renderDayPopup();}
   else dialog.close();
 }
 function saveRestriction(){
@@ -608,7 +742,7 @@ function saveRestriction(){
   try{
     const item={id:editor.id||uid(),...values},next=validateRestrictions(editor.id?restrictions().map(row=>row.id===editor.id?item:row):[...restrictions(),item]);
     if(change(()=>{state.restrictions=next;},'헌혈 제한 기간을 저장했습니다.')){
-      if(editor.returnDay){restrictionEditor=editor;returnFromRestrictionEditor();}else{restrictionEditor=null;openDayPopup(values.start);}
+      if(editor.returnDay||editor.returnArchive){restrictionEditor=editor;returnFromRestrictionEditor();}else{restrictionEditor=null;openDayPopup(values.start);}
     }else{feedback.textContent='저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 시도해 주세요.';feedback.hidden=false;}
   }catch(error){feedback.textContent=error.message;feedback.hidden=false;}
 }
@@ -618,6 +752,7 @@ function deleteRestriction(id){
   if(change(()=>{state.restrictions=restrictions().filter(row=>row.id!==id);},'헌혈 제한 기간을 삭제했습니다.')&&previous){dayPopup={...previous,snapshot:planSnapshot()};renderDayPopup();}
 }
 function openDayPopup(date){
+  restrictionArchiveOpen=false;
   if(!validAnchorDate(date))return;
   selected=date;moveCalendar(date);render();
   dayPopup={date,type:state.plans.find(plan=>plan.date===date)?.type||null,snapshot:planSnapshot()};
@@ -628,7 +763,7 @@ function renderDayPopup(){
   const {date}=dayPopup,{record,plan,choices}=availabilityForDate(date,state.records,state.plans,state.rules,restrictions());
   const past=date<today(),due=plan&&!record&&date<=today(),readOnly=!!record||past,blocked=activeRestrictions(date,restrictions()).length>0;
   const chosen=record?.type||dayPopup.type,choice=choices.find(item=>item.type===chosen),result=choice?.result;
-  const [year,month,day]=date.split('-').map(Number),holiday=holidays.day(date).names.join(' · ');
+  const [year,month,day]=date.split('-').map(Number);
   dayPopup.snapshot=planSnapshot();
   let detail='';
   if(record)detail=`<p class="date-popup-note">${TYPES[record.type].label} 헌혈 기록이 저장되어 있습니다.</p>`;
@@ -638,12 +773,12 @@ function renderDayPopup(){
     detail=`<div class="date-popup-totals"><span>계획 후 연간 계산량<strong>${num(result.projected)} <small>mL</small></strong></span><span>계획 후 잔여량<strong class="${result.remaining<0?'negative':'positive'}">${num(result.remaining)} <small>mL</small></strong></span></div>${warnings.length?`<div class="date-popup-warning" role="note"><strong>계산상 제한이 있는 가정입니다.</strong><ul>${warnings.map(warning=>`<li>${escape(warning)}</li>`).join('')}</ul></div>`:'<p class="date-popup-note">입력된 기록과 계획을 기준으로 계산한 결과입니다.</p>'}`;
   }else if(!past)detail='<p class="date-popup-note">종류를 선택하면 예상 잔여량과 제한 사유를 보여드려요.</p>';
   if(plan&&!record)detail+=`<div class="date-popup-plan"><div><strong>${due?'헌혈하셨나요?':'저장된 계획'}</strong><span>${TYPES[plan.type].label}${due?' 예정이었던 날입니다.':' 계획을 변경하거나 취소할 수 있어요.'}</span></div><div class="date-popup-plan-actions">${due&&!past?'<button type="button" class="secondary" data-action="day-complete">기록으로 남기기</button>':''}<button type="button" class="quiet danger-text" data-action="day-delete">계획 취소</button></div></div>`;
-  if(displayEnabled('redConnectCalendar')&&!past&&!record)detail+=`<div class="red-connect-shortcut date-popup-booking">${redConnectButton('day-red-connect')}<p>${plan?.type===chosen?'저장된 계획의 예약을 레드커넥트에서 진행하세요.':'선택한 계획은 ‘선택 완료’로 저장해 주세요. 예약은 별도로 진행합니다.'}</p></div>`;
+  if(displayEnabled('redConnectCalendar')&&!past&&!record)detail+=`<div class="red-connect-shortcut date-popup-booking">${redConnectButton('day-red-connect')}<p>${plan?.type===chosen?'설정한 방식으로 열어 예약을 진행하세요.':'선택한 계획은 ‘선택 완료’로 저장해 주세요. 예약은 별도로 진행합니다.'}</p></div>`;
   detail+=restrictionDayDetails(date)+`<button type="button" class="secondary restriction-entry" data-action="restriction-new">헌혈 제한 사유·기간 입력 <span aria-hidden="true">›</span></button>`;
   if(dayPopup.message)detail+=`<p class="date-popup-warning" role="status">${escape(dayPopup.message)}</p>`;
   const confirmAction=record?'day-edit-record':past?(plan?'day-complete':'day-add-record'):'day-confirm';
   const confirmLabel=record?'기록 수정':past?(plan?'헌혈 기록으로 남기기':'이 날짜 기록 추가'):result&&!result.ok?'제한 있는 가정으로 저장':'선택 완료';
-  $('#dialog-content').innerHTML=`<header class="date-popup-head"><span class="date-popup-year">${year}년</span><h2 id="date-popup-title" tabindex="-1">${month}월 ${day}일 <span>${'일월화수목금토'[weekday(date)]}요일</span></h2>${holiday?`<p class="date-popup-holiday">${escape(holiday)}</p>`:''}<p class="date-popup-subtitle">${record?'저장된 헌혈 기록을 확인하세요':past?'이 날짜의 헌혈 내역을 확인하세요':'헌혈 방식을 선택해 주세요'}</p><button type="button" class="date-popup-close" data-action="close-dialog" aria-label="날짜 상세 닫기">×</button></header><div class="date-popup-choices" role="group" aria-label="헌혈 종류 선택">${choices.map(({type,result})=>{
+  $('#dialog-content').innerHTML=`<header class="date-popup-head"><span class="date-popup-year">${year}년</span><h2 id="date-popup-title" tabindex="-1">${month}월 ${day}일 <span>${'일월화수목금토'[weekday(date)]}요일</span></h2><div id="date-popup-occasion" aria-live="polite" aria-atomic="true">${popupDateNames(date)}</div><button type="button" class="date-popup-close" data-action="close-dialog" aria-label="날짜 상세 닫기">×</button></header><div class="date-popup-choices" role="group" aria-label="헌혈 종류 선택">${choices.map(({type,result})=>{
     const active=chosen===type,status=record?(record.type===type?'완료':'—'):blocked?'제한':past?'과거':result.ok?'가능':'제한';
     const tone=record?'neutral':blocked?'restricted':readOnly?'neutral':result.ok?'available':'restricted';
     return `<button type="button" class="date-popup-choice ${tone}${active?' is-selected':''}" data-action="day-type" data-type="${type}" aria-pressed="${active}" ${readOnly?'disabled':''}><span class="date-popup-check" aria-hidden="true">${active?'✓':''}</span><strong>${TYPES[type].label}</strong><span class="date-popup-status">${status}</span></button>`;
@@ -711,10 +846,9 @@ function openAutoPlan(){
   $('#save-draft').onclick=()=>{if(!draft.length)return;const rows=draft;if(change(()=>state.plans.push(...rows),`${rows.length}건의 계획을 추가했습니다.`))dialog.close();};
 }
 function download(name,data,type){if(!window.BloodNoteAndroid){toast('파일 저장 기능을 열지 못했습니다. 앱을 다시 시작해 주세요.');return;}window.BloodNoteAndroid.saveText(name,type,String(data));toast('파일을 저장할 위치를 선택해 주세요.');}
-let backupTask=0;
 function requestBackupPassword(title,confirm,perform){
-  const ticket=++backupTask;
   openDialog(title,confirm?'비밀번호는 이 기기에 저장하지 않습니다. 잊으면 백업을 복원할 수 없습니다.':'백업을 저장할 때 정한 비밀번호를 입력해 주세요.',`<form id="backup-password-form" class="form-stack"><label>백업 비밀번호<input name="password" type="password" minlength="10" maxlength="1024" required autocomplete="off"></label>${confirm?'<label>비밀번호 확인<input name="confirm" type="password" minlength="10" maxlength="1024" required autocomplete="off"></label>':''}<p id="backup-password-status" class="settings-note" role="status">10자 이상으로 입력해 주세요. 인터넷은 사용하지 않습니다.</p><div class="card-foot"><button type="button" class="secondary" data-action="close-dialog">취소</button><button class="primary" type="submit">${confirm?'암호화하여 저장':'백업 열기'}</button></div></form>`);
+  const ticket=backupTask;
   const form=$('#backup-password-form'),status=$('#backup-password-status'),button=form.querySelector('[type="submit"]');
   let busy=false;
   form.addEventListener('submit',async event=>{
@@ -735,7 +869,7 @@ function exportBackup(){
     dialog.close();download(`blood-note-backup-${today()}${demoMode?'-example':''}.json`,encrypted,'application/json');
   });
 }
-function installHelp(){openDialog('연간채혈량 계산기 3.0.1','작은 월간 달력',`<div class="modal-message"><p>화면, 기록 저장, 계산, 일정 계획은 인터넷 없이 사용할 수 있습니다. 공휴일 자료는 달력의 🔃 버튼을 누르고 이번 갱신의 인터넷 사용을 허용해야 갱신합니다. 앱 업데이트는 설정에서 직접 확인하고 데이터 사용에 동의했을 때만 연결합니다.</p><p class="settings-note">이전 앱에서 저장한 백업이 있다면 ⚙ 설정의 ‘백업 불러오기’를 통해 기록과 계획을 옮길 수 있습니다.</p><p class="settings-note">기록은 이 기기의 앱 저장 공간에 보관됩니다. 앱 삭제나 앱 데이터 삭제 전에 백업 파일을 저장해 주세요.</p></div>`);}
+function installHelp(){openDialog('헌혈 계산기 4.0.1','작은 월간 달력',`<div class="modal-message"><p>화면, 기록 저장, 계산, 일정 계획은 인터넷 없이 사용할 수 있습니다. 공휴일 자료는 달력의 🔃 버튼을 누르고 이번 갱신의 인터넷 사용을 허용해야 갱신합니다. 앱 업데이트는 설정에서 직접 확인하고 데이터 사용에 동의했을 때만 연결합니다.</p><p class="settings-note">이전 앱에서 저장한 백업이 있다면 ⚙ 설정의 ‘백업 불러오기’를 통해 기록과 계획을 옮길 수 있습니다.</p><p class="settings-note">기록은 이 기기의 앱 저장 공간에 보관됩니다. 앱 삭제나 앱 데이터 삭제 전에 백업 파일을 저장해 주세요.</p></div>`);}
 function toggleDemo(){
   selectedPlanIds.clear();
   if(demoMode){state=realState;realState=null;demoMode=false;toast('내 기록으로 돌아왔습니다.');}
@@ -743,25 +877,42 @@ function toggleDemo(){
   setPage('dashboard');
 }
 app.addEventListener('change',e=>{
+  if(e.target.dataset?.listSort){saveListSort(e.target.dataset.listSort,e.target.value);return;}
   if(e.target.matches?.('[data-theme-option]')&&e.target.checked){saveTheme(e.target.value);return;}
+  if(e.target.matches?.('[data-donation-service]')&&e.target.checked){saveDonationService(e.target.value);return;}
   if(e.target.id==='start-page'){saveStartPage(e.target.value);return;}
   if(e.target.dataset.displayOption){saveDisplayOption(e.target.dataset.displayOption,e.target.checked);return;}
   if(e.target.id==='select-all-plans'){selectedPlanIds.clear();if(e.target.checked)state.plans.forEach(plan=>selectedPlanIds.add(plan.id));updatePlanSelectionUI();}
   if(e.target.dataset.planSelect){const id=e.target.dataset.planSelect;if(e.target.checked)selectedPlanIds.add(id);else selectedPlanIds.delete(id);updatePlanSelectionUI();}
-  if(e.target.id==='sim-date'&&validDate(e.target.value)){selected=e.target.value;moveCalendar(selected);render();}
+  if(e.target.id==='sim-date'){
+    if(!validAnchorDate(e.target.value)){e.target.value=selected;toast('1900년 1월 1일부터 2199년 12월 31일 사이의 날짜를 선택해 주세요.');return;}
+    selected=e.target.value;moveCalendar(selected);render();return;
+  }
   if(e.target.id==='record-filter'){recordFilter=e.target.value;recordPageIndex=0;render();}
   if(e.target.id==='record-page')moveRecordPage(Number(e.target.value));
   if(e.target.id==='history-complete')change(()=>state.complete=e.target.checked,e.target.checked?'기록 입력 완료로 표시했습니다.':'입력 기록 기준 예상값으로 표시합니다.');
-  if(e.target.id==='backup-file')restoreBackup(e.target.files[0]);
+  if(e.target.id==='backup-file'){
+    const file=e.target.files?.[0];
+    // Clear only the chooser so cancelling or retrying the same file fires change again.
+    e.target.value='';
+    void restoreBackup(file);
+  }
 });
 let certificateStage=null;
 function openCertificateImport(){
   if(demoMode){toast('예시 체험을 종료한 뒤 내 증명서를 불러와 주세요.');return;}
   if(storageFailed){toast('기록 저장 공간을 확인한 뒤 다시 시도해 주세요. 먼저 백업을 보관해 주세요.');return;}
-  if(!window.BloodNoteAndroid?.importCertificate){toast('증명서 PDF 가져오기는 Android 15 이상의 연간채혈량 계산기 앱에서 사용할 수 있습니다.');return;}
+  if(!window.BloodNoteAndroid?.importCertificate){toast('증명서 PDF 가져오기는 Android 15 이상의 헌혈 계산기 앱에서 사용할 수 있습니다.');return;}
+  if(certificateStage&&dialog.open)return;
+  openDialog('증명서 PDF 등록 안내','파일 선택 전에 확인해 주세요.',`<div class="modal-message"><p>다음 단계에서 스마트폰의 파일 선택창이 열립니다. 기기에 저장한 헌혈증명서 PDF를 직접 선택해 주세요.</p><p class="settings-note">선택한 파일 하나만 임시 읽기 권한으로 확인하며, 전체 저장소 접근 권한은 요청하지 않습니다. PDF 분석은 기기 안에서 진행하고 원본은 변경하지 않습니다.</p><p class="settings-note">암호가 있는 PDF는 기기 안에서 입력해 열 수 있습니다. 검토 후 등록해야 헌혈 기록에 반영됩니다.</p>${CERTIFICATE_PRIVACY_NOTICE}</div><div class="card-foot"><button type="button" class="secondary" data-action="close-dialog">취소</button><button type="button" class="primary" data-action="certificate-choose-file">PDF 선택하기</button></div>`);
+  certificateStage={phase:'permission'};
+}
+function chooseCertificateFile(){
+  if(demoMode||storageFailed||!dialog.open||certificateStage?.phase!=='permission')return;
   certificateStage={phase:'reading',page:0,selected:new Set()};
   openDialog('증명서 PDF 불러오기','기기에 저장한 헌혈확인증명서(개인)를 선택해 주세요.',`<div class="certificate-progress" aria-live="polite"><strong id="certificate-progress-label">파일 선택을 기다리고 있습니다.</strong><progress id="certificate-progress" max="100" value="0"></progress><p class="settings-note">파일은 기기 안에서만 읽습니다. 잠긴 PDF는 암호를 입력해 열 수 있으며, 암호는 저장·전송하지 않습니다. 검토 후 등록 버튼을 눌러야 기록에 반영됩니다.</p></div><div class="card-foot"><button class="secondary" data-action="close-dialog">취소</button></div>`);
-  window.BloodNoteAndroid.importCertificate();
+  try{window.BloodNoteAndroid.importCertificate();}
+  catch{certificateStage=null;openDialog('파일 선택 중단','파일 선택창을 열지 못했습니다. 다시 시도해 주세요.','<div class="card-foot"><button class="primary" data-action="close-dialog">닫기</button></div>');}
 }
 function updateCertificateSelection(){
   if(!certificateStage||certificateStage.phase!=='review')return;
@@ -784,7 +935,7 @@ function renderCertificateReview(){
     <div class="certificate-toolbar"><span id="certificate-selection" aria-live="polite"></span><div class="actions"><button class="quiet" data-action="certificate-select-new">새 기록 선택</button><button class="quiet" data-action="certificate-select-none">선택 해제</button></div></div>
     <div class="certificate-list">${visible.map(row=>`<label class="certificate-row ${row.selectable?'':'is-duplicate'}"><input type="checkbox" data-certificate-index="${row.index}" ${stage.selected.has(row.index)?'checked':''} ${row.selectable?'':'disabled'} aria-label="${escape(row.date)} ${TYPES[row.type].label} ${escape(status(row))}"><span><strong>${escape(row.date)}</strong><span class="certificate-type">${TYPES[row.type].label}</span><small>${row.page}쪽 · ${escape(status(row))}</small></span></label>`).join('')}</div>
     <div class="certificate-pagination"><button class="secondary small" data-action="certificate-prev" ${stage.page===0?'disabled':''} aria-label="이전 기록">‹ 이전</button><span>${stage.page+1} / ${pages}</span><button class="secondary small" data-action="certificate-next" ${stage.page===pages-1?'disabled':''} aria-label="다음 기록">다음 ›</button></div>
-    <p class="settings-note">저장되는 정보는 헌혈 날짜와 종류뿐입니다. 이름·생년월일·주민등록번호·증서번호·PDF 암호는 저장하지 않으며, 원본 PDF를 읽기 전용으로 열며 앱 안에 PDF 복사본을 만들지 않습니다.</p>
+    ${CERTIFICATE_PRIVACY_NOTICE}
     <div class="card-foot certificate-confirm"><button class="secondary" data-action="close-dialog">취소</button><button class="primary" data-action="certificate-commit"></button></div>`);
   updateCertificateSelection();
   dialog.scrollTop=0;
@@ -802,7 +953,8 @@ function commitCertificateImport(){
     appStorage.setItem(KEY,JSON.stringify(next));
     state=next;recordPageIndex=0;recordFilter='all';certificateStage=null;dialog.close();render();
       toast(`${merged.added}건 추가${merged.updated?` · ${merged.updated}건 수정`:''}${merged.converted?` · 계획 ${merged.converted}건 완료`:''}`,()=>{
-      try{appStorage.setItem(KEY,JSON.stringify(before));state=before;render();}catch{toast('되돌리기를 저장하지 못했습니다. 저장 공간을 확인해 주세요.');}
+      const restored=startPageChoiceOf(before)==='last'?{...before,lastPage:page}:before;
+      try{appStorage.setItem(KEY,JSON.stringify(restored));state=restored;render();}catch{toast('되돌리기를 저장하지 못했습니다. 저장 공간을 확인해 주세요.');}
     });
   }catch(error){toast('등록하지 못했습니다. '+(error.name==='QuotaExceededError'?'저장 공간을 확인해 주세요.':error.message));}
 }
@@ -829,6 +981,7 @@ window.bloodNoteCertificateEvent=(phase,payload)=>{
   }
 };
 dialog.addEventListener('change',e=>{
+  if(e.target.dataset?.listSort){saveListSort(e.target.dataset.listSort,e.target.value);return;}
   if(e.target.dataset?.certificateIndex!==undefined&&certificateStage?.phase==='review'){const i=Number(e.target.dataset.certificateIndex);if(certificateStage.review[i]?.selectable){if(e.target.checked)certificateStage.selected.add(i);else certificateStage.selected.delete(i);updateCertificateSelection();}}
 });
 // Require a tap that both starts and ends outside the panel. Padding and drags
@@ -846,7 +999,7 @@ dialog.addEventListener('click',event=>{
   if(dismiss&&dialog.open){event.preventDefault();event.stopPropagation();dialog.close();}
 });
 dialog.addEventListener('close',()=>{
-  backdropTap=false;layoutPrompt=null;
+  backdropTap=false;layoutPrompt=null;restrictionArchiveOpen=false;
   const date=dayPopup?.date||restrictionEditor?.returnDay?.date;dayPopup=null;restrictionEditor=null;dialog.classList.remove('calendar-date-dialog');dialog.removeAttribute?.('aria-labelledby');
   if(date)app.querySelector?.(`[data-calendar-date="${date}"]`)?.focus({preventScroll:true});
   backupTask++;
@@ -862,20 +1015,25 @@ function confirmBackupRestore(backup){
     if(!backup.screenLayouts&&state.screenLayouts)backup.screenLayouts=clone(state.screenLayouts);
     if(!backup.screenHidden&&state.screenHidden)backup.screenHidden=clone(state.screenHidden);
     if(!backup.theme&&state.theme)backup.theme=state.theme;
+    if(!backup.donationService&&state.donationService)backup.donationService=state.donationService;
+    if(!backup.listSort&&state.listSort)backup.listSort=clone(state.listSort);
+    if(backup.displayOptions?.donorDay===undefined&&typeof state.displayOptions?.donorDay==='boolean')backup.displayOptions={...backup.displayOptions,donorDay:state.displayOptions.donorDay};
     storageFailed=false;
     if(change(()=>{state=backup;recordPageIndex=0;recordFilter='all';},'백업을 복원했습니다.'))dialog.close();
   };
 }
 async function restoreBackup(file){
-  if(!file)return;if(file.size>5000000){toast('5MB 이하의 백업 파일을 선택해 주세요.');return;}
+  if(!file)return;const ticket=++backupTask;
+  if(file.size>5000000){toast('5MB 이하의 백업 파일을 선택해 주세요.');return;}
   try{
-    const raw=JSON.parse(await file.text());
+    const text=await file.text();if(ticket!==backupTask)return;
+    const raw=JSON.parse(text);
     if(isEncryptedBackup(raw))requestBackupPassword('암호화 백업 열기',false,async(password,active)=>{
       const text=await decryptBackup(raw,password);if(!active())return;
       const backup=validateState(JSON.parse(text));backupTask++;confirmBackupRestore(backup);
     });
     else confirmBackupRestore(validateState(raw));
-  }catch(error){toast('복원하지 못했습니다. '+error.message);}
+  }catch(error){if(ticket===backupTask)toast('복원하지 못했습니다. '+error.message);}
 }
 app.addEventListener('submit',e=>{if(e.target.id!=='rules-form')return;e.preventDefault();const form=e.target,rules={cap:Number(form.elements.cap.value),wholeLimit:Number(form.elements.wholeLimit.value),componentLimit:Number(form.elements.componentLimit.value),boundary:form.elements.boundary.value,volumes:{},waits:{}};for(const t of Object.keys(TYPES)){rules.volumes[t]=Number(form.elements['volume-'+t].value);rules.waits[t]=Number(form.elements['wait-'+t].value);}try{validateState({...state,rules});}catch(error){toast(error.message);return;}change(()=>state.rules=rules,'계산 기준을 바꾸고 전체 일정을 다시 계산했습니다.');});
 document.addEventListener('click',e=>{
@@ -898,6 +1056,7 @@ document.addEventListener('click',e=>{
   else if(action==='edit-plan')openEditor('plan',id,null,type);
   else if(action==='day-type')selectDayType(type);
   else if(action==='day-confirm')confirmDayPlan();
+  else if(action==='restriction-archive')openRestrictionArchive();
   else if(action==='restriction-new'){if(currentDayPopup())openRestrictionEditor(dayPopup.date);}
   else if(action==='restriction-edit')openRestrictionEditor(null,id);
   else if(action==='restriction-delete')deleteRestriction(id);
@@ -922,7 +1081,8 @@ document.addEventListener('click',e=>{
   else if(action==='calendar-prev'||action==='calendar-next'){const range=calendarWindow(calendarAnchor,calendarView()),target=action==='calendar-prev'?range.previous:range.next;if(target)navigateCalendar(button,target);}
   else if(action==='import-text')openTextImport();
   else if(action==='import-certificate')openCertificateImport();
-  else if(action==='issue-certificate')requestRedConnect();
+  else if(action==='certificate-choose-file')chooseCertificateFile();
+  else if(action==='issue-certificate')requestDonationService();
   else if(action==='certificate-prev'||action==='certificate-next'){if(certificateStage?.phase==='review'){certificateStage.page+=action==='certificate-next'?1:-1;renderCertificateReview();}}
   else if(action==='certificate-select-new'){if(certificateStage?.review){certificateStage.selected=new Set(certificateStage.review.filter(row=>row.selected).map(row=>row.index));renderCertificateReview();}}
   else if(action==='certificate-select-none'){if(certificateStage){certificateStage.selected.clear();renderCertificateReview();}}
@@ -936,10 +1096,11 @@ document.addEventListener('click',e=>{
 });
 $('#exit-demo').onclick=toggleDemo;$('#install').onclick=installHelp;
 
-window.addEventListener('hashchange',()=>{const next=location.hash.slice(1);if(screenEditor&&next!==page){location.hash=page;return;}if(APP_PAGES.includes(next)&&page!==next){page=next;rememberPage();render();}});
+window.addEventListener('hashchange',()=>{const next=location.hash.slice(1);if(screenEditor&&next!==page){location.hash=page;return;}if(APP_PAGES.includes(next)&&page!==next){backupTask++;page=next;rememberPage();render();}});
 installCalendarSwipe();
 if(!storageFailed)persist();
 render();
+showFirstRunNotice();
 if('ResizeObserver'in window){
   let lastWidth=0;
   new ResizeObserver(entries=>{const width=entries[0]?.contentRect.width;if(width!==lastWidth){lastWidth=width;scheduleHolidayFit();}}).observe(app);
@@ -961,5 +1122,9 @@ document.addEventListener('click',event=>{
   const link=event.target.closest('a[href]');if(!link)return;
   const target=new URL(link.href,location.href);
   if(target.protocol!=='https:'||target.origin===location.origin)return;
-  event.preventDefault();window.BloodNoteAndroid?.openLink(target.href);
+  event.preventDefault();
+  if(window.BloodNoteAndroid?.openLink){
+    try{window.BloodNoteAndroid.openLink(target.href);}
+    catch{toast('인터넷 접속 안내를 열지 못했습니다.');}
+  }else if(window.confirm?.('외부 사이트에 접속하면 인터넷과 데이터 요금이 발생할 수 있습니다.\n\n'+target.href+'\n\n브라우저로 접속할까요?'))window.open(target.href,'_blank','noopener,noreferrer');
 },true);

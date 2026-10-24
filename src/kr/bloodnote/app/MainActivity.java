@@ -49,11 +49,8 @@ public final class MainActivity extends Activity {
     private static final Set<String> ASSETS = new HashSet<>(Arrays.asList(
         "index.html", "app.mjs", "engine.mjs", "calendar-view.mjs", "holidays.mjs",
         "holiday-snapshot.mjs", "licenses.mjs", "certificate-import.mjs", "secure-storage.mjs", "backup-crypto.mjs",
-        "screen-layout.mjs", "layout-drag.mjs", "style.css", "icon.svg",
+        "screen-layout.mjs", "layout-drag.mjs", "style.css", "brand-blood.png", "brand-pastel.png", "brand-initial.png",
         "holiday-data-license.txt"
-    ));
-    private static final Set<String> EXTERNAL_HOSTS = new HashSet<>(Arrays.asList(
-        "github.com", "emi.bloodinfo.net"
     ));
     private static final int IMPORT_FILE = 101, EXPORT_FILE = 102;
     private static final int MAX_EXPORT_BYTES = 5_000_000;
@@ -242,7 +239,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void cancelExitHint() { runOnUiThread(MainActivity.this::resetExitHint); }
         @JavascriptInterface public void importCertificate() { runOnUiThread(() -> certificateImporter.choose()); }
         @JavascriptInterface public void requestAppUpdate() { runOnUiThread(() -> { resetExitHint(); updater.request(); }); }
-        @JavascriptInterface public void requestRedConnect() { runOnUiThread(() -> { resetExitHint(); redConnect.request(); }); }
+        @JavascriptInterface public void requestDonationService(String method) { runOnUiThread(() -> { resetExitHint(); redConnect.requestService(method); }); }
         @JavascriptInterface public void cancelCertificateImport() { runOnUiThread(() -> certificateImporter.cancel()); }
         @JavascriptInterface public void requestHolidayConsent(String requestId) {
             if (requestId == null || !requestId.matches("[a-zA-Z0-9-]{1,64}")) return;
@@ -319,12 +316,8 @@ public final class MainActivity extends Activity {
     }
 
     private void openExternal(String raw) {
-        if (raw == null) return;
-        Uri uri = Uri.parse(raw);
-        if (!"https".equals(uri.getScheme()) || uri.getUserInfo() != null || uri.getPort() != -1
-            || !EXTERNAL_HOSTS.contains(uri.getHost())) { message("열 수 없는 주소입니다."); return; }
-        try { startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)); }
-        catch (ActivityNotFoundException error) { message("주소를 열 브라우저가 없습니다."); }
+        resetExitHint();
+        redConnect.requestWeb(raw);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent result) {

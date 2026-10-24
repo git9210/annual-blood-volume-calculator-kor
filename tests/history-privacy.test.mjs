@@ -17,7 +17,7 @@ const assets=new URL('../assets/',import.meta.url);
 const source=readFileSync(new URL('app.mjs',assets),'utf8').replace(/^import .*;\n/gm,'');
 const fixture=count=>({version:1,rules:engine.clone(engine.DEFAULT_RULES),complete:true,plans:[],appliedImports:['kept-receipt'],
   records:Array.from({length:count},(_,i)=>({id:'record-'+i,date:engine.addDays('2020-01-01',i),type:['whole','mixed','plasma'][i%3]}))});
-function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
+function harness(count=201,{savedState,date='2026-10-18',hash='#records',freshInstall=false,savedMarker,denyMarker=false}={}){
   const initial=savedState??fixture(count),events={},elements=new Map(),prompts=[],finished=[],requests=[],exports=[],timers=new Map();let timerId=0,currentDate=date;
   let networkFailure=false,release=null;
   const node=key=>({innerHTML:'',textContent:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},
@@ -25,12 +25,22 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
     scrollIntoView(){},focus(){},showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const match of readFileSync(new URL('index.html',assets),'utf8').matchAll(/id="([^"]+)"/g))elements.set('#'+match[1],node('#'+match[1]));
   for(const key of ['#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status','#screen-widgets','#event-form','#event-feedback','#import-text','#save-import','#parse-import','#import-preview','#draft-start','#draft-months','#draft-preference','#draft-preview','#generate-draft','#save-draft'])elements.set(key,node(key));
+  // Replacing the page creates fresh native details elements with their markup defaults.
+  const detailsKeys=new Set();let pageHTML='';
+  Object.defineProperty(elements.get('#app'),'innerHTML',{get:()=>pageHTML,set:html=>{
+    pageHTML=html;for(const key of detailsKeys)elements.delete(key);detailsKeys.clear();
+    for(const match of html.matchAll(/<details\b([^>]*)>/g)){
+      const id=match[1].match(/\bid="([^"]+)"/)?.[1];if(!id)continue;
+      const key='#'+id,element=node(key);element.open=/\bopen(?:\s|$|=)/.test(match[1]);elements.set(key,element);detailsKeys.add(key);
+    }
+  }});
   elements.get('#event-form').elements={date:{value:'2026-10-01'},type:{value:'plasma'}};
   elements.get('#draft-start').value='2026-11-01';elements.get('#draft-months').value='6';elements.get('#draft-preference').value='plasma';
   const form=elements.get('#backup-password-form');form.elements={password:{value:''},confirm:{value:''}};
   form.querySelector=()=>({disabled:false});form.reset=()=>{form.elements.password.value='';form.elements.confirm.value='';};
-  const cache=new Map([['blood-note-v1',JSON.stringify(initial)]]);
-  const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
+  const cache=new Map(freshInstall?[]:[['blood-note-v1',JSON.stringify(initial)]]);
+  if(savedMarker!==undefined)cache.set('blood-note-onboarding-v1',savedMarker);
+  const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>{if(denyMarker&&key==='blood-note-onboarding-v1')throw Error('marker write denied');cache.set(key,value);}};
   const body={attributes:{},setAttribute(key,value){this.attributes[key]=value;}};
   const document={body,querySelector:key=>elements.get(key)||null,querySelectorAll:()=>[],addEventListener:(event,fn,capture)=>events['document:'+event+(capture?':capture':'')]=fn,removeEventListener(){}};
   const window={localStorage:storage,matchMedia:()=>({matches:true,addEventListener(){}}),addEventListener:(type,fn)=>events['window:'+type]=fn,removeEventListener(){},scrollTo(){},BloodNoteAndroid:{
@@ -46,11 +56,13 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records'}={}){
   const run=code=>vm.runInContext(code,context);
   return {initial,events,elements,prompts,finished,requests,exports,window,run,storage,timers,body,
     setToday:value=>{currentDate=value;run('refreshLocalDay()');},
-    relaunch:(hash='')=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate,hash}),
+    relaunch:(hash='')=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate,hash,savedMarker:storage.getItem('blood-note-onboarding-v1')}),
     html:()=>elements.get('#app').innerHTML,read:()=>JSON.parse(storage.getItem('blood-note-v1')),
     ids:()=>[...elements.get('#app').innerHTML.matchAll(/data-action="edit-record" data-id="([^"]+)"/g)].map(match=>match[1]),
     click:(action,data={})=>{const button={dataset:{action,...data},disabled:false};events['document:click']({target:{closest:selector=>selector==='[data-action]'?button:null},preventDefault(){}});},
     change:(id,value)=>events['#app:change']({target:{id,value,dataset:{}}}),
+    sort:(key,value,insideDialog=false)=>events[insideDialog?'#dialog:change':'#app:change']({target:{value,dataset:{listSort:key}}}),
+    service:value=>events['#app:change']({target:{value,checked:true,matches:selector=>selector==='[data-donation-service]',dataset:{}}}),
     theme:value=>events['#app:change']({target:{value,checked:true,matches:selector=>selector==='[data-theme-option]',dataset:{}}}),
     display:(key,checked)=>events['#app:change']({target:{id:'display-'+key,checked,dataset:{displayOption:key}}}),
     password:async(value,confirm=value)=>{form.elements.password.value=value;form.elements.confirm.value=confirm;await events['#backup-password-form:submit']({preventDefault(){}});},
@@ -93,11 +105,11 @@ test('A restricted calendar date still calculates complete volume and reasons wh
 });
 test('Three offline themes save from the settings radio group and preserve all user data across relaunch',()=>{
   const h=harness(),before=h.read();
-  assert.equal(h.body.attributes['data-theme'],'initial');assert.equal(h.read().theme,undefined);
+  assert.equal(h.body.attributes['data-theme'],'blood');assert.equal(h.read().theme,undefined);
   h.click('settings');
   assert.match(h.html(),/role="radiogroup" aria-labelledby="theme-title"/);
   assert.deepEqual([...h.html().matchAll(/data-theme-option value="([^"]+)"/g)].map(m=>m[1]),['blood','pastel','initial']);
-  for(const theme of ['blood','pastel','initial']){
+  for(const theme of ['pastel','blood','initial']){
     h.theme(theme);assert.equal(h.body.attributes['data-theme'],theme);assert.equal(h.read().theme,theme);
     assert.match(h.html(),new RegExp(`data-theme-option value="${theme}" checked`));
     const stored=h.read();delete stored.theme;assert.deepEqual(stored,before);
@@ -311,7 +323,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 3.0.1/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.0.1/);
   assert.equal(h.requests.length,0);
 });
 
@@ -322,7 +334,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v3.0.1/);
+  assert.match(h.html(),/현재 v4.0.1/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -433,7 +445,7 @@ test('Calendar always shows one compact month, with seven headings and four stat
   const types=[...html.matchAll(/class="day-status [^>]+data-type="([^"]+)"/g)].map(m=>m[1]);
   assert.deepEqual(types.slice(0,4),['whole','plasma','platelet','mixed']);
   h.click('day',{date:'2026-11-01'});assert.equal(h.elements.get('#dialog').open,true);
-  assert.match(h.elements.get('#dialog-content').innerHTML,/헌혈 방식을 선택해 주세요/);
+  assert.match(h.elements.get('#dialog-content').innerHTML,/id="date-popup-title"/);
   h.click('close-dialog');assert.equal(h.storage.getItem('blood-note-v1'),before);assert.equal(h.requests.length,0);
 });
 
@@ -669,7 +681,7 @@ test('Red Connect calendar and plan switches independently control visible short
   const initial={...fixture(2),startPage:'planner',displayOptions:{balanceHighlight:false,recordHighlight:false},
     plans:[{id:'nearest',date:'2026-10-30',type:'plasma'},{id:'later',date:'2026-11-30',type:'mixed'}]};
   const h=harness(0,{savedState:initial,hash:''});
-  let launches=0;h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;
+  let launches=0;h.window.BloodNoteAndroid.requestDonationService=()=>launches++;
   const baseline=h.run('JSON.stringify(inspectPlan(state.records,state.plans,state.rules))');
   for(const [calendar,plan] of [[true,true],[false,true],[false,false],[true,false],[true,true]]){
     const before=launches;
@@ -687,7 +699,7 @@ test('Red Connect calendar and plan switches independently control visible short
     h.click('day',{date:'2026-10-30'});
     const popup=h.elements.get('#dialog-content').innerHTML;
     assert.equal(popup.includes('data-action="day-red-connect"'),calendar);
-    assert.equal(popup.includes('저장된 계획의 예약을 레드커넥트에서'),calendar);
+    assert.equal(popup.includes('설정한 방식으로 열어 예약을 진행하세요.'),calendar);
     h.click('day-red-connect');assert.equal(launches,before+Number(plan)+Number(calendar));
     h.click('close-dialog');
     for(const date of ['2026-10-17','2020-01-01']){
@@ -989,11 +1001,386 @@ test('Record actions form four ordered entries and the issuance button launches 
   assert.equal(h.elements.has('#quick-add'),false);
   const group=h.html().match(/class="record-entry-grid"[\s\S]*?<\/div>/)[0];
   assert.deepEqual([...group.matchAll(/data-action="([^"]+)"/g)].map(m=>m[1]),['add-record','issue-certificate','import-text','import-certificate']);
-  assert.match(group,/헌혈증명서 발급받기<\/span><small>\(레드커넥트 실행\)<\/small>/);
+  assert.match(group,/헌혈증명서 발급받기<\/span>/);assert.doesNotMatch(group,/레드커넥트 실행/);
   assert.match(group,/여러 기록 추가하기/);assert.match(group,/증명서 PDF 등록하기/);
-  let launches=0;h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;
+  let launches=0;h.window.BloodNoteAndroid.requestDonationService=()=>launches++;
   h.click('records');assert.equal(launches,0);h.click('issue-certificate');assert.equal(launches,1);assert.deepEqual(h.read(),before);
-  h.window.BloodNoteAndroid.requestRedConnect=()=>{throw Error('unavailable')};h.click('issue-certificate');assert.match(h.elements.get('#toast').innerHTML,/열지 못했습니다/);assert.deepEqual(h.read(),before);
-  h.window.BloodNoteAndroid.requestRedConnect=()=>launches++;h.click('demo');h.click('records');
+  h.window.BloodNoteAndroid.requestDonationService=()=>{throw Error('unavailable')};h.click('issue-certificate');assert.match(h.elements.get('#toast').innerHTML,/열지 못했습니다/);assert.deepEqual(h.read(),before);
+  h.window.BloodNoteAndroid.requestDonationService=()=>launches++;h.click('demo');h.click('records');
   assert.match(h.html(),/data-action="issue-certificate" disabled/);h.click('issue-certificate');assert.equal(launches,1);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Compact four-type totals count all completed records, ignore plans and filtering, and follow delete/undo',()=>{
+  const initial={...fixture(12),plans:[{id:'future',date:'2026-12-01',type:'whole'}]};
+  initial.records.forEach((r,i)=>r.type=['whole','plasma','platelet','mixed'][i%4]);
+  const h=harness(0,{savedState:initial}),before=h.read();
+  const counts=()=>[...h.html().matchAll(/data-count-type="([^"]+)"><strong>([\d,]+)<\/strong>회/g)].map(m=>[m[1],Number(m[2].replaceAll(',',''))]);
+  assert.deepEqual(counts(),[['whole',3],['plasma',3],['platelet',3],['mixed',3]]);
+  assert.match(h.html(),/<th scope="col">혈소판<br>혈장<\/th>/);
+  h.change('record-filter','mixed');assert.deepEqual(counts(),[['whole',3],['plasma',3],['platelet',3],['mixed',3]]);
+  h.click('delete-record',{id:'record-0'});assert.equal(counts()[0][1],2);
+  h.run('undoAction()');assert.deepEqual(h.read(),before);assert.equal(counts()[0][1],3);
+  assert.equal(h.requests.length,0);
+  const empty=harness(0);assert.equal((empty.html().match(/<strong>0<\/strong>회/g)||[]).length,4);
+});
+
+test('Reservation and certificate service defaults are offline; saved choice routes all three entry points without donation data',()=>{
+  const initial={...fixture(2),plans:[{id:'nearest',date:'2026-12-01',type:'plasma'}]},h=harness(0,{savedState:initial});
+  assert.equal(h.run('donationServiceOf(state)'),'redconnect');assert.equal(h.body.attributes['data-theme'],'blood');
+  const calls=[];h.window.BloodNoteAndroid.requestDonationService=(...args)=>calls.push(args);
+  h.click('issue-certificate');assert.deepEqual(calls,[['redconnect']]);
+  h.click('settings');assert.match(h.html(),/data-donation-service value="redconnect" checked/);
+  h.service('browser');assert.deepEqual(calls,[['redconnect']]);assert.equal(h.read().donationService,'browser');
+  h.click('records');h.click('issue-certificate');
+  h.click('planner');h.click('plan-red-connect',{id:'nearest'});
+  h.click('day',{date:'2026-12-15'});h.click('day-red-connect');
+  assert.deepEqual(calls,[['redconnect'],['browser'],['browser'],['browser']]);
+  assert.deepEqual(h.read().records,initial.records);assert.deepEqual(h.read().plans,initial.plans);
+  const reopened=h.relaunch();assert.equal(reopened.read().donationService,'browser');assert.equal(reopened.requests.length+h.requests.length,0);
+  const green=harness(0,{savedState:{...fixture(0),theme:'initial'}});assert.equal(green.body.attributes['data-theme'],'initial');
+});
+
+test('Service preferences allow only known values, roll back failed writes, and cannot change in demo mode',()=>{
+  const h=harness(2);h.service('browser');const before=h.read();
+  for(const value of ['__proto__','constructor','https://example.com',null,{},['redconnect']]){h.service(value);assert.deepEqual(h.read(),before);}
+  h.storage.setItem=()=>{throw Error('full');};h.service('redconnect');assert.deepEqual(h.read(),before);assert.equal(h.run('donationServiceOf(state)'),'browser');
+  const demo=h.relaunch();demo.click('demo');demo.click('settings');assert.match(demo.html(),/data-donation-service value="browser" checked disabled/);
+  demo.service('redconnect');assert.deepEqual(demo.read(),before);assert.equal(demo.requests.length,0);
+});
+
+test('Encrypted backup round-trips the service choice and legacy backups retain an existing selection',async()=>{
+  const h=harness(2);h.service('browser');const before=h.read();
+  h.click('export-backup');await h.password('service-backup-test');
+  const raw=await backupCrypto.decryptBackup(JSON.parse(h.exports.at(-1).text),'service-backup-test');assert.equal(JSON.parse(raw).donationService,'browser');
+  h.service('redconnect');h.run(`confirmBackupRestore(validateState(${raw}))`);h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),before);
+  for(const value of [undefined,'constructor','other']){
+    const old={...before};if(value===undefined)delete old.donationService;else old.donationService=value;
+    h.run(`confirmBackupRestore(validateState(${JSON.stringify(old)}))`);h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),before);
+  }
+  assert.deepEqual(h.relaunch().read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Questionnaire and qualification links have the same exact destination; external links route to native consent or a cancelable browser warning',()=>{
+  const html=readFileSync(new URL('index.html',assets),'utf8'),h=harness(2);h.click('settings');
+  const url=html.match(/class="questionnaire-link" href="([^"]+)"/)[1];
+  assert.equal(url,'https://emi.bloodinfo.net/emi4.do?lang=ko');assert.ok(h.html().includes(`href="${url}"`));
+  assert.match(html,/<span>전자<br>문진<\/span>/);assert.match(html,/<title>헌혈 계산기<\/title>/);
+  const calls=[],opens=[],before=h.read();let warned=0;
+  h.window.BloodNoteAndroid.openLink=target=>calls.push(target);h.window.open=(...args)=>opens.push(args);
+  const capture=target=>h.events['document:click:capture']({target:{closest:()=>({href:target})},preventDefault(){}});
+  capture(url);capture('https://github.com/hyunbinseo/holidays-kr');assert.deepEqual(calls,[url,'https://github.com/hyunbinseo/holidays-kr']);assert.deepEqual(opens,[]);
+  delete h.window.BloodNoteAndroid.openLink;
+  h.window.confirm=message=>{warned++;assert.match(message,/인터넷과 데이터 요금/);return false;};capture(url);assert.equal(warned,1);assert.deepEqual(opens,[]);
+  h.window.confirm=()=>true;capture(url);assert.deepEqual(opens,[[url,'_blank','noopener,noreferrer']]);
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Plan and recent restriction sort independently without changing simulation order, records or plans',()=>{
+ const initial={...fixture(2),plans:[{id:'later',date:'2027-01-01',type:'plasma'},{id:'sooner',date:'2026-12-01',type:'platelet'}],restrictions:[{id:'first',start:'2026-01-02',end:'2026-01-02',reason:'first'},{id:'last',start:'2026-09-02',end:'2026-09-02',reason:'last'}]};
+ const h=harness(0,{savedState:initial,hash:'#planner'}),before=h.read(),assessment=h.run('JSON.stringify(inspectPlan(state.records,state.plans,state.rules,restrictions()))');
+ const ids=()=>[...h.html().matchAll(/class="plan-row[^>]*data-plan-id="([^"]+)"/g)].map(m=>m[1]);
+ assert.deepEqual(ids(),['later','sooner']);h.sort('plans','newest');assert.deepEqual(ids(),['sooner','later']);
+ h.sort('restrictions','oldest');assert.ok(h.html().indexOf('data-action="restriction-edit" data-id="first"')<h.html().indexOf('data-action="restriction-edit" data-id="last"'));
+ assert.equal(h.run('JSON.stringify(inspectPlan(state.records,state.plans,state.rules,restrictions()))'),assessment);
+ assert.deepEqual(h.read().records,before.records);assert.deepEqual(h.read().plans,before.plans);assert.deepEqual(h.read().restrictions,before.restrictions);
+ const reopened=h.relaunch();assert.equal(reopened.read().listSort.plans,'newest');assert.equal(reopened.read().listSort.restrictions,'oldest');assert.equal(h.requests.length,0);
+});
+
+test('Archive partitions by restriction end and annual boundary, retains all data, and can sort or delete/undo from its popup',()=>{
+ const rows=[{id:'old',start:'2024-12-01',end:'2024-12-02',reason:'旧 <b>薬</b>'},{id:'exact',start:'2025-10-17',end:'2025-10-18',reason:'exact'},{id:'current',start:'2025-10-19',end:'2025-10-19',reason:'current'},{id:'crossing',start:'2025-01-01',end:'2026-12-01',reason:'crossing'}];
+ const initial={...fixture(0),restrictions:rows},h=harness(0,{savedState:initial,hash:'#planner'}),before=h.read();
+ const groups=JSON.parse(h.run('JSON.stringify(restrictionGroups())'));assert.deepEqual(groups.archived.map(x=>x.id),['old','exact']);assert.deepEqual(groups.current.map(x=>x.id),['current','crossing']);
+ assert.match(h.html(),/과거 전체보기 ↗/);assert.doesNotMatch(h.html(),/data-action="restriction-edit" data-id="old"/);
+ h.click('restriction-archive');let popup=h.elements.get('#dialog-content').innerHTML;
+ assert.match(popup,/과거 헌혈 제한 내역/);assert.ok(popup.indexOf('data-id="exact"')<popup.indexOf('data-id="old"'));assert.match(popup,/旧 &lt;b&gt;薬&lt;\/b&gt;/);
+ h.sort('archivedRestrictions','oldest',true);popup=h.elements.get('#dialog-content').innerHTML;assert.ok(popup.indexOf('data-id="old"')<popup.indexOf('data-id="exact"'));assert.equal(h.elements.get('#dialog').open,true);
+ h.click('restriction-delete',{id:'old'});assert.match(h.elements.get('#dialog-content').innerHTML,/1건/);h.run('undoAction()');assert.match(h.elements.get('#dialog-content').innerHTML,/2건/);
+ assert.deepEqual(h.read().restrictions,before.restrictions);assert.deepEqual(h.read().records,before.records);
+ const inclusive={...initial,rules:{...initial.rules,boundary:'include'}},inc=harness(0,{savedState:inclusive});assert.deepEqual(JSON.parse(inc.run('JSON.stringify(restrictionGroups().archived.map(x=>x.id))')),['old']);
+ const leap=harness(0,{savedState:{...fixture(0),restrictions:[{id:'leap',start:'2023-02-28',end:'2023-02-28',reason:''}]},date:'2024-02-29'});assert.equal(leap.run('restrictionGroups().archived.length'),1);
+ assert.equal(h.requests.length+inc.requests.length+leap.requests.length,0);
+});
+
+test('Sort choices survive encrypted backup; legacy backups, failed writes and invalid controls preserve current choices',async()=>{
+ const h=harness(2);h.sort('plans','newest');h.sort('restrictions','oldest');h.sort('archivedRestrictions','oldest');const before=h.read();
+ h.click('export-backup');await h.password('sort-backup-test');const raw=await backupCrypto.decryptBackup(JSON.parse(h.exports.at(-1).text),'sort-backup-test');assert.deepEqual(JSON.parse(raw).listSort,before.listSort);
+ h.sort('plans','oldest');h.run(`confirmBackupRestore(validateState(${raw}))`);h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),before);
+ const legacy={...before};delete legacy.listSort;h.run(`confirmBackupRestore(validateState(${JSON.stringify(legacy)}))`);h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),before);
+ for(const [key,value] of [['plans','<script>'],['constructor','newest'],['plans',null]]){h.sort(key,value);assert.deepEqual(h.read(),before);}
+ h.storage.setItem=()=>{throw Error('full');};h.sort('plans','oldest');assert.deepEqual(h.read(),before);
+ const demo=h.relaunch();demo.click('demo');demo.sort('plans','oldest');assert.deepEqual(demo.read(),before);assert.equal(h.requests.length+demo.requests.length,0);
+});
+
+test('Fresh-install welcome is marked before display and never repeats after close, relaunch or backup restore',()=>{
+ const h=harness(0,{freshInstall:true,hash:''});assert.equal(h.elements.get('#dialog').open,true);assert.match(h.elements.get('#dialog-content').innerHTML,/처음 이용하시는 분께/);assert.match(h.elements.get('#dialog-content').innerHTML,/제작자는 개인정보를 수집하지 않으며/);
+ assert.match(h.elements.get('#dialog-content').innerHTML,/비전공자가 만든 비공식 앱입니다/);assert.doesNotMatch(h.elements.get('#dialog-content').innerHTML,/개발자/);
+ const welcome=h.elements.get('#dialog-content').innerHTML;
+ assert.match(welcome,/<strong>헌혈이 처음이라면<\/strong>[^]*?일정 시뮬레이터[^]*?계획을 등록하세요[^]*?실제 헌혈을 마친 뒤[^]*?나의 장기 계획[^]*?헌혈 기록으로 남기기/);
+ assert.match(welcome,/<strong>헌혈 경험이 있다면<\/strong>[^]*?헌혈증명서 발급받기[^]*?증명서 PDF 등록하기[^]*?기존 기록을 한 번에 입력/);
+ assert.equal(h.storage.getItem('blood-note-onboarding-v1'),'1');assert.equal(h.read().records.length,0);assert.equal(h.read().plans.length,0);assert.equal(h.requests.length,0);
+ h.click('close-dialog');h.run('showFirstRunNotice()');assert.equal(h.elements.get('#dialog').open,false);
+ h.run(`confirmBackupRestore(validateState(${JSON.stringify(fixture(0))}))`);h.elements.get('#confirm-restore').onclick();h.run('showFirstRunNotice()');assert.equal(h.elements.get('#dialog').open,false);
+ const reopened=h.relaunch();assert.equal(!!reopened.elements.get('#dialog').open,false);assert.equal(reopened.storage.getItem('blood-note-onboarding-v1'),'1');assert.equal(reopened.requests.length,0);
+});
+
+test('Updating an earlier installation skips the welcome even with zero records; marker failure never overwrites data or disables editing',()=>{
+ for(const count of [0,3]){const h=harness(count);assert.equal(!!h.elements.get('#dialog').open,false);assert.equal(h.storage.getItem('blood-note-onboarding-v1'),'1');assert.equal(h.read().records.length,count);}
+ const h=harness(0,{freshInstall:true,denyMarker:true});assert.equal(h.run('storageFailed'),false);assert.equal(h.read().records.length,0);assert.match(h.elements.get('#toast').innerHTML,/최초 안내 표시 여부를 저장하지 못했습니다/);assert.equal(h.requests.length,0);
+});
+
+test('Monthly donor labels and official June 14 observance appear without changing weekday backgrounds; one switch controls header and calendar',()=>{
+ const h=harness(0,{date:'2026-11-13',hash:'#planner'});
+ assert.equal(h.elements.get('#date-occasion').textContent,'헌혈의 날');
+ let month=h.run("calendarHTML('month',calendarWindow('2026-11-01','month'))"),cell=month.match(/data-calendar-date="2026-11-13"[^]*?<\/button>/)[0];assert.match(cell,/class="day is-weekday/);assert.match(cell,/헌혈의 날/);
+ h.setToday('2027-06-14');assert.equal(h.elements.get('#date-occasion').textContent,'세계 헌혈자의 날');
+ month=h.run("calendarHTML('month',calendarWindow('2027-06-01','month'))");cell=month.match(/data-calendar-date="2027-06-14"[^]*?<\/button>/)[0];assert.match(cell,/class="day is-weekday/);assert.match(cell,/세계 헌혈자의 날/);
+ assert.match(month.match(/data-calendar-date="2027-06-13"[^]*?<\/button>/)[0],/헌혈의 날/);
+ h.display('donorDay',false);assert.equal(h.elements.get('#date-occasion').hidden,true);assert.doesNotMatch(h.run("calendarHTML('month',calendarWindow('2027-06-01','month'))"),/세계 헌혈자의 날|헌혈의 날/);
+ const restarted=h.relaunch();assert.equal(restarted.read().displayOptions.donorDay,false);
+ h.run(`confirmBackupRestore(validateState(${JSON.stringify(fixture(0))}))`);h.elements.get('#confirm-restore').onclick();assert.equal(h.read().displayOptions.donorDay,false);
+ h.setToday('2026-05-05');assert.match(h.elements.get('#date-occasion').textContent,/어린이날/);h.setToday('2026-10-24');assert.equal(h.elements.get('#date-occasion').hidden,true);assert.equal(h.requests.length,0);
+});
+
+test('Confirmed holiday refresh updates today header from the existing cache without a new automatic fetch',async()=>{
+ const h=harness(0,{date:'2026-10-20',hash:'#planner'});assert.equal(h.elements.get('#date-occasion').hidden,true);
+ h.click('refresh-holidays');assert.equal(h.requests.length,0);h.consent(true);await new Promise(resolve=>setImmediate(resolve));await h.release();assert.equal(h.requests.length,1);assert.match(h.elements.get('#date-occasion').textContent,/임시공휴일 테스트/);
+ h.click('records');assert.equal(h.requests.length,1);assert.match(h.elements.get('#date-occasion').textContent,/임시공휴일 테스트/);
+});
+
+test('Sorting a visible list or an archive popup does not rebuild the calendar or collapse its list',()=>{
+ const h=harness(0,{hash:'#planner',savedState:{...fixture(0),plans:[{id:'next',date:'2026-12-01',type:'plasma'}]}});
+ const detail={open:true},target={innerHTML:'',querySelector:()=>detail};h.elements.set('[data-layout-id="plans"] .screen-widget-content',target);
+ h.run('let calendarBuilds=0;const renderCalendarBeforeSort=calendarHTML;calendarHTML=(...args)=>{calendarBuilds++;return renderCalendarBeforeSort(...args);};');
+ h.sort('plans','newest');assert.equal(h.run('calendarBuilds'),0);assert.equal(detail.open,true);assert.match(target.innerHTML,/data-list-sort="plans"/);assert.match(target.innerHTML,/data-plan-id="next"/);
+ h.elements.set('[data-layout-id="restrictions"] .screen-widget-content',target);h.sort('restrictions','oldest');assert.equal(h.run('calendarBuilds'),0);assert.equal(detail.open,true);
+ h.click('restriction-archive');h.sort('archivedRestrictions','oldest',true);assert.equal(h.run('calendarBuilds'),0);assert.equal(h.elements.get('#dialog').open,true);assert.equal(h.requests.length,0);
+ h.click('close-dialog');h.run(`state.screenHidden={planner:['plans','restrictions']};let hiddenListBuilds=0;const listBeforeHide=planListSection,restrictionsBeforeHide=restrictionList;planListSection=(...args)=>{hiddenListBuilds++;return listBeforeHide(...args);};restrictionList=(...args)=>{hiddenListBuilds++;return restrictionsBeforeHide(...args);};render();`);assert.equal(h.run('hiddenListBuilds'),0);
+});
+
+test('Ordinary past, completed and future dates have no popup subtitle; observances replace the old instruction without changing data',()=>{
+ const initial={...fixture(0),records:[{id:'done',date:'2026-10-01',type:'plasma'}]},h=harness(0,{savedState:initial,hash:'#planner'}),before=h.read();
+ const content=()=>h.elements.get('#dialog-content').innerHTML;
+ for(const date of ['2026-09-30','2026-10-01','2026-11-12']){
+  h.click('day',{date});assert.match(content(),/id="date-popup-title"/);
+  assert.doesNotMatch(content(),/date-popup-subtitle|date-popup-holiday|헌혈 방식을 선택해 주세요|이 날짜의 헌혈 내역을 확인하세요|저장된 헌혈 기록을 확인하세요/);
+ }
+ for(const [date,name] of [['2026-11-13','헌혈의 날'],['2027-06-14','세계 헌혈자의 날'],['2026-05-05','어린이날']]){
+  h.click('day',{date});assert.match(content(),new RegExp(`<p class="date-popup-holiday">${name}</p>`));assert.doesNotMatch(content(),/date-popup-subtitle/);
+ }
+ assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Holiday names precede donor observances in the header, calendar and popup; the donor switch leaves public holidays visible',()=>{
+ const h=harness(0,{date:'2026-11-13',hash:'#planner'}),content=()=>h.elements.get('#dialog-content').innerHTML;
+ h.run(`const holidayDayBefore=holidays.day;holidays.day=date=>date==='2026-11-13'?{names:['임시공휴일 <시험>'],known:true,kind:'holiday'}:holidayDayBefore(date);updateHeaderDate();`);
+ assert.equal(h.elements.get('#date-occasion').textContent,'임시공휴일 <시험> · 헌혈의 날');
+ const month=h.run("calendarHTML('month',calendarWindow('2026-11-01','month'))");
+ assert.match(month.match(/data-calendar-date="2026-11-13"[^]*?<\/button>/)[0],/임시공휴일 &lt;시험&gt; · 헌혈의 날/);
+ h.click('day',{date:'2026-11-13'});assert.match(content(),/<p class="date-popup-holiday">임시공휴일 &lt;시험&gt; · 헌혈의 날<\/p>/);assert.doesNotMatch(content(),/<시험>/);
+ h.display('donorDay',false);h.click('day',{date:'2026-11-13'});assert.match(content(),/<p class="date-popup-holiday">임시공휴일 &lt;시험&gt;<\/p>/);assert.doesNotMatch(content(),/헌혈의 날/);
+ assert.equal(h.elements.get('#date-occasion').textContent,'임시공휴일 <시험>');
+ h.click('day',{date:'2027-06-14'});assert.doesNotMatch(content(),/date-popup-holiday/);assert.equal(h.requests.length,0);
+});
+
+test('Past restriction entry uses the same short label at zero or nonzero counts and retains its actual count in the popup',()=>{
+ for(const count of [0,2]){
+  const rows=Array.from({length:count},(_,i)=>({id:'archived-'+i,start:'2024-10-0'+(i+1),end:'2024-10-0'+(i+1),reason:'過去 '+i}));
+  const h=harness(0,{savedState:{...fixture(0),restrictions:rows},hash:'#planner'}),before=h.read();
+  assert.match(h.html(),/>과거 전체보기 ↗<\/button>/);assert.doesNotMatch(h.html(),/과거 내역 \d+건/);
+  h.click('restriction-archive');assert.match(h.elements.get('#dialog-content').innerHTML,new RegExp(`<span class="badge">${count}건</span>`));
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+ }
+});
+
+test('Only the header icon follows saved themes; launcher changes are never requested, including demo and relaunch',()=>{
+ const h=harness(2,{savedState:{...fixture(2),theme:'initial'}}),original=h.read(),calls=[];
+ h.window.BloodNoteAndroid.requestLauncherIcon=theme=>calls.push(theme);
+ h.click('settings');assert.equal(h.elements.get('#brand-icon').src,'./brand-initial.png');assert.deepEqual(calls,[]);
+ for(const page of ['dashboard','planner','records','settings'])h.click(page);assert.deepEqual(calls,[]);
+ h.theme('pastel');assert.equal(h.elements.get('#brand-icon').src,'./brand-pastel.png');assert.deepEqual(calls,[]);
+ h.click('demo');h.click('settings');h.theme('blood');assert.equal(h.elements.get('#brand-icon').src,'./brand-pastel.png');assert.deepEqual(calls,[]);h.click('demo');
+ const restart=h.relaunch();assert.equal(restart.elements.get('#brand-icon').src,'./brand-pastel.png');assert.deepEqual(restart.read(),h.read());
+ const saved=h.read();delete saved.theme;delete original.theme;assert.deepEqual(saved,original);assert.equal(h.requests.length+restart.requests.length,0);
+});
+
+test('Failed theme saves keep the header unchanged; the favicon stays red and no native launcher API is used',()=>{
+ const h=harness(2,{savedState:{...fixture(2),theme:'blood'}}),before=h.read(),calls=[];
+ h.window.BloodNoteAndroid.requestLauncherIcon=theme=>calls.push(theme);
+ h.run('applyTheme()');h.run('applyTheme()');assert.deepEqual(calls,[]);assert.equal(h.elements.get('#brand-icon').src,'./brand-blood.png');assert.deepEqual(h.read(),before);
+ h.storage.setItem=()=>{throw Error('full');};h.theme('pastel');assert.equal(h.elements.get('#brand-icon').src,'./brand-blood.png');assert.deepEqual(calls,[]);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+ assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<link id="app-icon" rel="icon" href="[.]\/brand-blood[.]png"/);
+ assert.doesNotMatch(source,/requestLauncherIcon|launcherThemeSent|favicon[.]href/);
+});
+
+test('Popup donor dates follow the saved switch in all three themes, including July 13 and completed records',()=>{
+ for(const theme of ['blood','pastel','initial'])for(const enabled of [true,false]){
+  const initial={...fixture(0),theme,displayOptions:{donorDay:enabled},records:[{id:'past-donor',date:'2026-06-14',type:'plasma'}],plans:[{id:'future-donor',date:'2027-07-13',type:'whole'}]};
+  const h=harness(0,{savedState:initial,hash:'#planner'}),before=h.read();
+  for(const [date,label] of [['2027-07-13','헌혈의 날'],['2027-06-14','세계 헌혈자의 날'],['2026-06-14','세계 헌혈자의 날']]){
+   h.click('day',{date});const popup=h.elements.get('#dialog-content').innerHTML;
+   assert.match(popup,/id="date-popup-occasion" aria-live="polite"/);
+   if(enabled)assert.ok(popup.includes(`<p class="date-popup-holiday">${label}</p>`));else assert.doesNotMatch(popup,/date-popup-holiday|세계 헌혈자의 날|헌혈의 날/);
+   h.click('close-dialog');
+  }
+  assert.deepEqual(h.read(),before);const restarted=h.relaunch();restarted.click('day',{date:'2027-07-13'});
+  assert.equal(restarted.elements.get('#dialog-content').innerHTML.includes('<p class="date-popup-holiday">헌혈의 날</p>'),enabled);
+  assert.deepEqual(restarted.read(),before);assert.equal(h.requests.length+restarted.requests.length,0);
+ }
+});
+
+test('An open popup caption updates with the donor switch and holiday data without recalculating or losing its choice',()=>{
+ const h=harness(0,{hash:'#planner'}),before=h.read();h.click('day',{date:'2027-07-13'});h.click('day-type',{type:'plasma'});
+ const caption={innerHTML:'<p class="date-popup-holiday">헌혈의 날</p>'};h.elements.set('#date-popup-occasion',caption);
+ h.run('let popupReassessments=0;const oldPopupAvailability=availabilityForDate;availabilityForDate=(...args)=>{popupReassessments++;return oldPopupAvailability(...args);};');
+ h.display('donorDay',false);assert.equal(caption.innerHTML,'');assert.equal(h.run('dayPopup.type'),'plasma');
+ h.display('donorDay',true);assert.equal(caption.innerHTML,'<p class="date-popup-holiday">헌혈의 날</p>');
+ h.run(`const oldDayLookup=holidays.day;holidays.day=date=>date==='2027-07-13'?{names:['임시공휴일 <가상>'],known:true,kind:'holiday'}:oldDayLookup(date);updateHolidayUI();`);
+ assert.equal(caption.innerHTML,'<p class="date-popup-holiday">임시공휴일 &lt;가상&gt; · 헌혈의 날</p>');
+ h.display('donorDay',false);assert.equal(caption.innerHTML,'<p class="date-popup-holiday">임시공휴일 &lt;가상&gt;</p>');
+ h.display('donorDay',true);assert.equal(h.run('popupReassessments'),0);assert.equal(h.run('dayPopup.type'),'plasma');
+ const enabledCaption=caption.innerHTML;h.storage.setItem=()=>{throw Error('full');};h.display('donorDay',false);assert.equal(h.read().displayOptions.donorDay,true);assert.equal(caption.innerHTML,enabledCaption);
+ assert.deepEqual(h.read().records,before.records);assert.deepEqual(h.read().plans,before.plans);
+ h.click('close-dialog');caption.innerHTML='unrelated content';h.run('updateHolidayUI()');assert.equal(caption.innerHTML,'unrelated content');assert.equal(h.requests.length,0);
+});
+
+test('Dashboard sections fold independently and retain their states through redraw, navigation and layout editing without data writes',()=>{
+  for(const theme of ['blood','pastel','initial']){
+    const initial={...fixture(201),theme,plans:[{id:'next',date:'2026-11-06',type:'plasma'}]},h=harness(201,{savedState:initial,hash:'#dashboard'}),before=h.read();
+    const ids=['next','upcoming','releases','recent'],node=id=>h.elements.get('#dashboard-'+id);
+    const openStates=()=>ids.map(id=>node(id).open);
+    assert.deepEqual(openStates(),[true,true,true,true]);
+    for(const [id,title] of [['next','다음 헌혈 예상일'],['upcoming','다가오는 계획'],['releases','계산에서 빠지는 기록'],['recent','최근 헌혈 기록']]){
+      const content=h.html().match(new RegExp(`<details id="dashboard-${id}"[^>]*>([\\s\\S]*?)</details>`))?.[1];
+      assert.ok(content);assert.ok(content.indexOf(title)<content.indexOf('</summary>'));assert.match(content,/class="dashboard-section-body"/);
+    }
+    let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+    node('next').open=false;node('releases').open=false;node('recent').open=false;
+    const expected=[false,true,false,false];h.run('render()');assert.deepEqual(openStates(),expected);
+    h.click('planner');h.elements.get('#restriction-periods').open=true;h.elements.get('#long-term-plans').open=true;
+    h.click('records');h.click('dashboard');assert.deepEqual(openStates(),expected);
+    h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'next'});
+    h.click('layout-hide',{id:'recent'});h.click('layout-show',{id:'recent'});assert.deepEqual(openStates(),expected);
+    h.click('layout-cancel');assert.deepEqual(openStates(),expected);
+    node('next').open=true;h.run('render()');assert.deepEqual(openStates(),[true,true,false,false]);
+    h.click('planner');assert.equal(h.elements.get('#restriction-periods').open,true);assert.equal(h.elements.get('#long-term-plans').open,true);
+    assert.equal(writes,0);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+    h.click('dashboard');assert.deepEqual(h.relaunch('#dashboard').run("sectionIds.slice(0,4).map(id=>document.querySelector('#'+id).open)").join(','),'true,true,true,true');
+  }
+});
+
+test('Restriction archive link belongs to the collapsible body for zero or many rows and archive operations preserve the expanded state',()=>{
+  for(const count of [0,2]){
+    const restrictions=Array.from({length:count},(_,i)=>({id:'past-'+i,start:`2024-10-0${i+1}`,end:`2024-10-0${i+1}`,reason:'과거 기록'}));
+    const h=harness(201,{savedState:{...fixture(201),restrictions},hash:'#planner'}),before=h.read();
+    assert.equal(h.elements.get('#restriction-periods').open,false);
+    const content=h.html().match(/<details id="restriction-periods"[^>]*>([\s\S]*?)<\/details>/)?.[1];
+    assert.ok(content);assert.ok(content.indexOf('data-action="restriction-archive"')>content.indexOf('</summary>'));
+    assert.equal((content.match(/data-action="restriction-archive"/g)||[]).length,1);
+    h.elements.get('#restriction-periods').open=true;h.click('restriction-archive');
+    assert.match(h.elements.get('#dialog-content').innerHTML,new RegExp(`<span class="badge">${count}건</span>`));
+    h.click('close-dialog');h.run('render()');assert.equal(h.elements.get('#restriction-periods').open,true);
+    h.elements.get('#restriction-periods').open=false;h.run('render()');assert.equal(h.elements.get('#restriction-periods').open,false);
+    assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+  }
+});
+
+test('Upcoming dashboard plans exclude overdue dates, retain today, and roll forward without deleting historical plans',()=>{
+  const plans=['2026-10-01','2026-10-02','2026-10-03','2026-10-18','2026-10-25','2026-11-06','2026-12-04'].map((date,index)=>({id:'upcoming-'+index,date,type:'plasma'}));
+  const h=harness(201,{savedState:{...fixture(201),plans},hash:'#dashboard'}),before=h.read();
+  const dates=()=>{const content=h.html().match(/<details id="dashboard-upcoming"[^>]*>([\s\S]*?)<\/details>/)?.[1];return [...content.matchAll(/class="date">([^<]+)<p>/g)].map(match=>match[1]);};
+  assert.deepEqual(dates(),['2026. 10. 18. 일요일','2026. 10. 25. 일요일','2026. 11. 6. 금요일']);
+  h.setToday('2026-10-19');assert.deepEqual(dates(),['2026. 10. 25. 일요일','2026. 11. 6. 금요일','2026. 12. 4. 금요일']);
+  h.click('planner');for(let i=0;i<4;i++)assert.match(h.html(),new RegExp(`data-plan-id="upcoming-${i}"`));
+  h.setToday('2027-01-01');h.click('dashboard');assert.deepEqual(dates(),[]);assert.match(h.html(),/다음 헌혈을 미리 그려보세요/);
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('A slow older backup read cannot replace the newer selected backup or reopen over a manual editor',async()=>{
+  const h=harness(201),before=h.read();
+  const first=h.run('let completeSlowRead;restoreBackup({size:100,text:()=>new Promise(resolve=>completeSlowRead=resolve)})');
+  await h.run('restoreBackup({size:100,text:async()=>JSON.stringify({...state,records:state.records.slice(0,2)})})');
+  assert.match(h.elements.get('#dialog-content').innerHTML,/완료 기록 <strong>2건<\/strong>/);
+  h.run('completeSlowRead(JSON.stringify({...state,records:state.records.slice(0,1)}))');await first;
+  assert.match(h.elements.get('#dialog-content').innerHTML,/완료 기록 <strong>2건<\/strong>/);
+  h.click('close-dialog');
+  const second=h.run('let completeEditorRead;restoreBackup({size:100,text:()=>new Promise(resolve=>completeEditorRead=resolve)})');
+  h.click('add-record');const editor=h.elements.get('#dialog-content').innerHTML;
+  h.run('completeEditorRead(JSON.stringify({...state,records:state.records.slice(0,1)}))');await second;
+  assert.equal(h.elements.get('#dialog-content').innerHTML,editor);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Reused next-date results match uncached calculations after in-place edits, undo, rules, deferrals and midnight',()=>{
+  const initial={...fixture(0),records:[{id:'whole',date:'2026-08-01',type:'whole'},{id:'mixed',date:'2026-10-08',type:'mixed'}],plans:[{id:'future',date:'2026-12-10',type:'plasma'}],restrictions:[{id:'pause',start:'2026-10-20',end:'2026-10-22',reason:'복용'}]};
+  const h=harness(0,{savedState:initial,hash:'#records'});
+  h.run('let dateSearches=0;const uncachedEarliest=earliest;earliest=(...args)=>{dateSearches++;return uncachedEarliest(...args);};');
+  const assertCurrent=()=>{
+    const current=JSON.parse(h.run('JSON.stringify(state)')),date=h.run('today()');
+    const actual=JSON.parse(h.run('JSON.stringify(nextDonationDates(today()))'));
+    assert.deepEqual(actual,Object.keys(engine.TYPES).map(type=>({type,date:engine.earliest(type,date,current.records,[],current.rules,1098,current.restrictions)})));
+  };
+  h.click('dashboard');assert.equal(h.run('dateSearches'),4);assertCurrent();
+  for(let i=0;i<3;i++){h.run('render()');h.click('records');h.click('dashboard');}
+  h.click('settings');h.theme('pastel');h.click('dashboard');assertCurrent();assert.equal(h.run('dateSearches'),4);
+  h.run("change(()=>{state.plans[0].date='2026-12-20';},'plan changed')");assertCurrent();assert.equal(h.run('dateSearches'),4);
+  h.run("change(()=>{state.records[0].type='plasma';},'record changed')");assertCurrent();assert.equal(h.run('dateSearches'),8);
+  h.run('undoAction()');assertCurrent();assert.equal(h.run('dateSearches'),12);
+  h.run("change(()=>{state.rules.waits.mixed=30;},'rules changed')");assertCurrent();assert.equal(h.run('dateSearches'),16);
+  h.run("change(()=>{state.restrictions[0].end='2026-12-15';},'restriction changed')");assertCurrent();assert.equal(h.run('dateSearches'),20);
+  const saved=h.read();h.setToday('2026-10-19');assertCurrent();assert.equal(h.run('dateSearches'),24);assert.deepEqual(h.read(),saved);
+  h.run("change(()=>{state.records=[];},'empty')");assert.equal(h.run('nextDatesCache'),null);assert.equal(h.run('dateSearches'),24);
+  assert.equal(h.requests.length,0);assert.equal(h.read().plans[0].date,'2026-12-20');
+});
+
+test('Replacing a backup password dialog cancels its pending export; stale file failures after navigation stay silent',async()=>{
+  const h=harness(201),before=h.read();h.run('exportBackup()');
+  const encryption=h.password('valid-test-password');h.click('add-record');const editor=h.elements.get('#dialog-content').innerHTML;
+  await encryption;assert.equal(h.elements.get('#dialog-content').innerHTML,editor);assert.equal(h.exports.length,0);
+  h.click('close-dialog');
+  const read=h.run('let rejectOldFile;restoreBackup({size:100,text:()=>new Promise((resolve,reject)=>rejectOldFile=reject)})');
+  h.click('settings');const notification=h.elements.get('#toast').innerHTML;
+  h.run("rejectOldFile(Error('stale file failure'))");await read;
+  assert.equal(h.elements.get('#toast').innerHTML,notification);assert.equal(h.elements.get('#dialog').open,false);
+  const hashRead=h.run('let completeHashRead;restoreBackup({size:100,text:()=>new Promise(resolve=>completeHashRead=resolve)})');
+  h.run("location.hash='#planner'");h.events['window:hashchange']();
+  h.run('completeHashRead(JSON.stringify({...state,records:[]}))');await hashRead;
+  assert.equal(h.elements.get('#dialog').open,false);assert.equal(h.run('page'),'planner');assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Out-of-range manual calendar dates cannot crash the planner or break subsequent navigation',()=>{
+  const h=harness(2,{hash:'#planner'}),before=h.read(),selected=h.run('selected');
+  for(const value of ['1899-12-31','2200-01-01','0001-01-01','2026-02-30','']){
+    const input={id:'sim-date',value,dataset:{}};
+    assert.doesNotThrow(()=>h.events['#app:change']({target:input}),value);
+    assert.equal(h.run('selected'),selected);assert.equal(input.value,selected);
+    assert.equal(h.run('calendarAnchor'),selected);assert.deepEqual(h.read(),before);
+    h.click('records');assert.doesNotThrow(()=>h.click('planner'));
+  }
+  for(const value of ['1900-01-01','2199-12-31','2026-11-01']){
+    h.change('sim-date',value);assert.equal(h.run('selected'),value);
+    assert.match(h.html(),new RegExp(`data-calendar-date="${value}"`));
+  }
+  h.click('month-today');assert.equal(h.run('calendarAnchor'),'2026-10-18');
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('The same backup can be selected again after cancel or a read failure, without applying it before confirmation',async()=>{
+  const h=harness(3,{hash:'#settings'}),before=h.read(),backup=fixture(1);
+  const input={id:'backup-file',value:'',files:[],dataset:{}};
+  let fail=false,reads=0;
+  const file={size:1000,text:async()=>{reads++;if(fail)throw Error('file unavailable');return JSON.stringify(backup);}};
+  // File inputs dispatch change only when their selected file list changes.
+  const select=async()=>{
+    const path='C:\\fakepath\\backup.json';
+    if(input.value!==path){input.value=path;input.files=[file];h.events['#app:change']({target:input});}
+    await new Promise(resolve=>setImmediate(resolve));
+  };
+  await select();assert.equal(h.elements.get('#dialog').open,true);assert.deepEqual(h.read(),before);
+  h.click('close-dialog');await select();
+  assert.equal(h.elements.get('#dialog').open,true,'Selecting the same cancelled file reopens the confirmation');
+  assert.equal(reads,2);assert.deepEqual(h.read(),before);
+  h.click('close-dialog');fail=true;await select();assert.equal(h.elements.get('#dialog').open,false);
+  assert.match(h.elements.get('#toast').innerHTML,/복원하지 못했습니다/);assert.deepEqual(h.read(),before);
+  fail=false;await select();assert.equal(h.elements.get('#dialog').open,true);assert.equal(reads,4);
+  h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read().records,backup.records);
+  assert.equal(h.requests.length,0);
 });

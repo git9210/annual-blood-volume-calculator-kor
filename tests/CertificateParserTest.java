@@ -47,6 +47,9 @@ public final class CertificateParserTest {
         rejects(()->parse(new String(new char[CertificateParser.MAX_PAGE_CHARS+1])));
         String json=parse(page(1,1,1,a)).finishJson();
         expect(!json.contains("99-20-000001")&&!json.contains("테스트센터")&&!json.contains("주민등록"));
+        String identity = "성명 가상성명\n생년월일 1980-01-02\n주소 테스트시 가상구 예시로 123\n주민등록번호 000000-0000000\n";
+        String privatePage = page(1,1,1,a).replace("헌혈횟수",identity+"헌혈횟수");
+        expect(parse(privatePage).finishJson().equals("{\"pages\":1,\"expected\":1,\"rows\":[{\"date\":\"2020-02-29\",\"type\":\"mixed\",\"sourceType\":\"혈소판혈장\",\"page\":1}]}"));
         System.out.println("PASS: "+checks+" native parser checks (no device PDF API execution).");
     }
 }

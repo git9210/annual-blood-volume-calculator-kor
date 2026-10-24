@@ -181,14 +181,14 @@ test('Requested captions are removed, the Red Connect action remains, and zero r
   assert.doesNotMatch(h.app(),/class="calendar-range"|가장 가까운 예정 헌혈|예약은 레드커넥트에서 진행하세요/);
   assert.match(h.app(),/aria-label="네 종류의 헌혈 가능 여부가 표시된 월간 달력"/);
   assert.match(h.app(),/data-action="plan-red-connect" data-id="next"/);
-  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">0건<\/span><\/summary>/);
+  assert.match(h.app(),/<summary><span class="summary-title">헌혈 제한 기간 <span class="badge">0건<\/span>/);
   assert.match(h.app(),/등록된 헌혈 제한 기간이 없습니다/);
   assert.ok(h.app().indexOf('나의 장기 계획')<h.app().indexOf('restriction-list'));
   assert.ok(h.app().indexOf('restriction-list')<h.app().indexOf('앞으로 12개월의 연간 계산량'));
   h.click('day',{date:'2026-10-23'});h.click('restriction-new');h.restrictionForm({reason:'薬 / 검사'}).onsubmit({preventDefault(){}});
-  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">1건/);
+  assert.match(h.app(),/<summary><span class="summary-title">헌혈 제한 기간 <span class="badge">1건/);
   h.click('restriction-delete',{id:h.read().restrictions[0].id});
-  assert.match(h.app(),/<summary>헌혈 제한 기간 <span class="badge">0건/);
+  assert.match(h.app(),/<summary><span class="summary-title">헌혈 제한 기간 <span class="badge">0건/);
   assert.deepEqual(h.read().records,before.records);assert.deepEqual(h.read().plans,before.plans);assert.equal(h.requests(),0);
 });
 test('Restriction dates are marked through both endpoints; their list follows long-term plans and completed donations stay distinct',()=>{
@@ -314,7 +314,7 @@ test('Backdrop dismissal runs existing PDF and backup cancellation cleanup and a
 });
 
 function redConnectBridge(h){
-  h.run('window.redConnectRequests=[];window.BloodNoteAndroid={requestRedConnect(...args){window.redConnectRequests.push(args);}}');
+  h.run('window.redConnectRequests=[];window.BloodNoteAndroid={requestDonationService(...args){window.redConnectRequests.push(args);}}');
   return ()=>JSON.parse(h.run('JSON.stringify(window.redConnectRequests)'));
 }
 test('Red Connect popup shortcut requests native consent only on tap, sends no data and preserves an unsaved choice',()=>{
@@ -322,19 +322,19 @@ test('Red Connect popup shortcut requests native consent only on tap, sends no d
   h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'plasma'});
   assert.match(h.html(),/data-action="day-red-connect"/);assert.match(h.html(),/선택 완료.*저장/);
   assert.deepEqual(requests(),[]);h.click('day-red-connect');
-  assert.deepEqual(requests(),[[]]);assert.equal(h.open(),true);
+  assert.deepEqual(requests(),[['redconnect']]);assert.equal(h.open(),true);
   assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
   assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
   h.click('day-confirm');assert.equal(h.read().plans.length,1);
   h.click('day',{date:'2027-02-19'});h.click('day-red-connect');
-  assert.deepEqual(requests(),[[],[]]);assert.equal(h.read().plans.length,1);
+  assert.deepEqual(requests(),[['redconnect'],['redconnect']]);assert.equal(h.read().plans.length,1);
 });
 test('Exactly the earliest today-or-future plan has a shortcut, and deletion or date rollover moves it',()=>{
   const h=harness({plans:[{id:'later',date:'2027-02-19',type:'whole'},{id:'past',date:'2026-10-01',type:'mixed'},{id:'next',date:'2026-11-06',type:'plasma'},{id:'due',date:'2026-10-22',type:'platelet'}]});
   const requests=redConnectBridge(h),ids=()=>[...h.app().matchAll(/data-action="plan-red-connect" data-id="([^"]+)"/g)].map(m=>m[1]);
   assert.deepEqual(ids(),['due']);assert.deepEqual(requests(),[]);
   h.click('plan-red-connect',{id:'later'});h.click('plan-red-connect',{id:'past'});assert.deepEqual(requests(),[]);
-  const before=h.read();h.click('plan-red-connect',{id:'due'});assert.deepEqual(requests(),[[]]);assert.deepEqual(h.read(),before);
+  const before=h.read();h.click('plan-red-connect',{id:'due'});assert.deepEqual(requests(),[['redconnect']]);assert.deepEqual(h.read(),before);
   h.click('delete-plan',{id:'due'});assert.deepEqual(ids(),['next']);
   h.click('plan-red-connect',{id:'due'});assert.equal(requests().length,1);
   h.today('2026-11-07',true);assert.deepEqual(ids(),['later']);
@@ -357,7 +357,7 @@ test('Past dates, completed donations and closed or stale date popups cannot ope
 test('Unavailable or failing bridge and demo mode keep all data and never fall back to a website',()=>{
   const h=harness({plans:[{id:'upcoming',date:'2026-11-06',type:'plasma'}]}),before=h.read();
   h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/Android 앱/);
-  h.run("window.BloodNoteAndroid={requestRedConnect(){throw Error('unavailable')}}");
+  h.run("window.BloodNoteAndroid={requestDonationService(){throw Error('unavailable')}}");
   h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/열지 못했습니다/);
   const requests=redConnectBridge(h);h.run('realState=clone(state);demoMode=true;render()');
   assert.match(h.app(),/data-action="plan-red-connect" data-id="upcoming" disabled/);
