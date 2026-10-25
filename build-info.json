@@ -1,0 +1,12 @@
+{
+  "apk": "Annual-Blood-Volume-Calculator-4.0.3-Small.apk",
+  "package": "kr.bloodnote.app",
+  "version": "4.0.3",
+  "version_code": 48,
+  "bytes": 354066,
+  "sha256": "83e298b0928d5a46e939bec51e969b064025226af65135f70c0007f7ba2f84ae",
+  "source_site_commit": "50610ab9f40c6b27c841547ad5bba16693c49f19",
+  "min_sdk": 26,
+  "target_sdk": 36,
+  "device_tested": false
+}

@@ -1,14 +1,14 @@
 package kr.bloodnote.app;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
-import java.io.OutputStream;
-import java.net.URI;
-import java.security.MessageDigest;
-import java.util.Locale;
+import java.nio.charset.StandardCharsets;
+import java.util.function.BooleanSupplier;
 
-/** Fixed update origin and bounded streaming; contains no UI, credentials or user data. */
+/** Bounded release metadata and a fixed public repository; no APK download/install. */
 final class UpdatePolicy {
     static final String REPOSITORY = "git9210/annual-blood-volume-calculator-kor";
     static final String API = "https://api.github.com/repos/" + REPOSITORY + "/releases/latest";
@@ -31,51 +31,40 @@ final class UpdatePolicy {
         return 0;
     }
 
-    static String apkName(String version) { return "Annual-Blood-Volume-Calculator-" + version(version) + "-Small.apk"; }
+    static String apkName(String tag) { return "Annual-Blood-Volume-Calculator-" + version(tag) + "-Small.apk"; }
+    static String releasePage(String tag) { version(tag); return RELEASES + "/tag/" + tag; }
 
-    static boolean allowed(String raw, boolean metadata) {
-        try {
-            URI uri = new URI(raw);
-            if (!"https".equals(uri.getScheme()) || uri.getPort() != -1 || uri.getUserInfo() != null || uri.getFragment() != null) return false;
-            if (metadata) return API.equals(raw);
-            String host = uri.getHost(), path = uri.getRawPath();
-            if ("github.com".equals(host))
-                return uri.getRawQuery() == null && path != null && path.startsWith("/" + REPOSITORY + "/releases/download/")
-                    && !path.contains("..") && !path.contains("%");
-            return ("release-assets.githubusercontent.com".equals(host) || "objects.githubusercontent.com".equals(host))
-                && path != null && path.startsWith("/") && !path.contains("..");
-        } catch (Exception invalid) { return false; }
+    static boolean validAsset(String tag, String name, String url, long size, String state) {
+        String expectedName = apkName(tag);
+        return expectedName.equals(name) && size > 0 && size <= MAX_APK && "uploaded".equals(state)
+            && (RELEASES + "/download/" + tag + "/" + expectedName).equals(url);
     }
 
-    interface Transfer {
-        boolean cancelled();
-        void progress(long bytes);
-    }
-
-    static String copy(InputStream in, OutputStream out, long limit, long expected, Transfer transfer) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] buffer = new byte[32 * 1024];
-        long total = 0;
-        while (true) {
-            if (transfer.cancelled() || Thread.currentThread().isInterrupted()) throw new InterruptedIOException("취소했습니다.");
-            int count = in.read(buffer);
-            if (count == -1) break;
-            total += count;
-            if (total > limit || (expected >= 0 && total > expected)) throw new IOException("파일 크기가 안내된 값과 다르거나 허용 범위를 넘었습니다.");
-            out.write(buffer, 0, count);
-            digest.update(buffer, 0, count);
-            transfer.progress(total);
+    static String readMetadata(InputStream in, BooleanSupplier cancelled) throws IOException {
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            while (true) {
+                if (cancelled.getAsBoolean() || Thread.currentThread().isInterrupted())
+                    throw new InterruptedIOException("취소했습니다.");
+                int count = in.read(buffer);
+                if (count == -1) break;
+                if (out.size() + count > MAX_METADATA) throw new IOException("배포 정보가 너무 큽니다.");
+                out.write(buffer, 0, count);
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
         }
-        if (expected >= 0 && total != expected) throw new IOException("APK를 끝까지 받지 못했습니다. 다시 시도해 주세요.");
-        StringBuilder hex = new StringBuilder();
-        for (byte b : digest.digest()) hex.append(String.format(Locale.ROOT, "%02x", b & 255));
-        return hex.toString();
     }
 
-    static void checkIdentity(String packageName, String expectedPackage, String apkVersion, String releaseVersion,
-                              long apkCode, long installedCode, boolean sameSignature) throws IOException {
-        if (!expectedPackage.equals(packageName) || !version(releaseVersion).equals(apkVersion)
-                || apkCode <= installedCode || !sameSignature)
-            throw new IOException("앱 이름표·버전 또는 서명이 맞지 않아 설치를 중단했습니다. 기존 앱과 기록은 유지됩니다.");
+    // Older versions downloaded here. This version never writes or installs an APK.
+    static void clearLegacyCache(File cache) {
+        File directory = new File(cache, "app-update");
+        File[] files = directory.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            String name = file.getName();
+            if (file.isFile() && ("update.apk".equals(name)
+                    || name.matches("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\\.part"))) file.delete();
+        }
+        directory.delete(); // Only succeeds if no unrelated entries remain.
     }
 }

@@ -322,7 +322,6 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent result) {
         super.onActivityResult(requestCode, resultCode, result);
-        if (updater != null && updater.result(requestCode, resultCode)) return;
         Uri uri = resultCode == RESULT_OK && result != null ? result.getData() : null;
         boolean contentUri = uri != null && "content".equals(uri.getScheme());
         if (requestCode == CertificateImporter.PICK_PDF) {
@@ -432,7 +431,6 @@ public final class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         if (certificateImporter != null) certificateImporter.resume();
-        if (updater != null) updater.resume();
         if (web != null) {
             web.onResume();
             web.evaluateJavascript("if(typeof window.bloodNoteRefreshDay==='function')window.bloodNoteRefreshDay();", null);
