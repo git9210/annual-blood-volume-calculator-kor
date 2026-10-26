@@ -29,6 +29,16 @@ test('Arrow moves and drag insertion are immutable, bounded and retain every wid
   for(const bad of [insertLayoutBefore(original,'bad',null),insertLayoutBefore(original,'calendar','bad'),shiftLayout(original,'bad',1),shiftLayout(original,'calendar',100)])assert.deepEqual(bad,original);
   assert.deepEqual(original,copy);
 });
+test('Records layouts normalize legacy and invalid preferences and keep all five sections as full-width widgets',()=>{
+  const defaults=['history-status','entry','counts','history','volunteer'];
+  assert.deepEqual(layoutOrder('records'),defaults);
+  for(const raw of [null,[],{records:null},{records:Array(33).fill('history')}])assert.deepEqual(layoutOrder('records',validateScreenLayouts(raw)),defaults);
+  const raw={records:['volunteer','unknown','history','volunteer']},copy=JSON.stringify(raw),layouts=validateScreenLayouts(raw);
+  assert.deepEqual(layouts.records,['volunteer','history','history-status','entry','counts']);assert.equal(JSON.stringify(raw),copy);
+  assert.deepEqual(validateScreenHidden({records:['counts','unknown','counts','entry']}),{records:['counts','entry']});
+  assert.deepEqual(Object.values(layoutSpans('records',defaults)),[6,6,6,6,6]);
+  assert.deepEqual(insertLayoutBefore(defaults,'volunteer','history-status'),['volunteer','history-status','entry','counts','history']);
+});
 test('Wide layouts pair adjacent cards and group metrics while isolated widgets fill their row',()=>{
   const defaults=layoutOrder('dashboard'),spans=layoutSpans('dashboard',defaults);
   assert.equal(spans.balance,3);assert.equal(spans.next,3);assert.equal(spans['whole-count'],2);assert.equal(spans.recent,6);

@@ -15,6 +15,8 @@ final class RedConnectLauncher {
     private static final String PACKAGE = "com.sk.redconnect";
     private static final String RESERVATION_NOTE = "실제 예약 시 원하는 지점·날짜·시간·헌혈 종류를 선택하지 못할 수 있습니다. 예약 가능 여부는 해당 기관의 운영과 예약 현황에 따라 달라집니다.\n\n이 앱에서 헌혈 계획을 저장하거나 ‘헌혈 예약하기’를 눌러도 실제 예약이 완료되는 것은 아닙니다. 레드커넥트 또는 대한적십자사 웹사이트에서 예약 절차를 끝내고 예약 내역을 확인해 주세요.";
     private static final String WEBSITE = "https://www.bloodinfo.net/";
+    private static final String VMS = "https://www.vms.or.kr/auth/blood.do";
+    private static final String VMS_NOTE = "표시된 봉사시간은 등록한 헌혈 완료 기록을 기준으로 계산한 값이며, VMS의 실제 인정·연계 내역과 다를 수 있습니다. 로그인·본인확인·헌혈실적 연계는 VMS에서 직접 진행해 주세요. 이 링크를 눌러도 실적이 자동으로 연계되지 않습니다.";
     private static final Set<String> HOSTS = new HashSet<>(Arrays.asList(
         "github.com", "emi.bloodinfo.net", "www.bloodinfo.net"
     ));
@@ -38,7 +40,7 @@ final class RedConnectLauncher {
         if (uri == null) { information("열 수 없는 주소입니다", "앱에서 허용한 HTTPS 주소만 열 수 있습니다."); return; }
         confirm("인터넷에 연결할까요?",
             "스마트폰의 기본 브라우저로 다음 주소를 엽니다.\n\n" + uri
-            + "\n\n인터넷 연결과 데이터 요금이 발생할 수 있습니다. 헌혈 기록·계획·PDF·암호는 전달하지 않습니다. 외부 사이트 이용과 데이터 사용은 해당 사이트·브라우저의 설정을 따릅니다." + (WEBSITE.equals(uri.toString()) ? "\n\n" + RESERVATION_NOTE : ""),
+            + "\n\n인터넷 연결과 데이터 요금이 발생할 수 있습니다. 헌혈 기록·계획·PDF·암호는 전달하지 않습니다. 외부 사이트 이용과 데이터 사용은 해당 사이트·브라우저의 설정을 따릅니다." + (WEBSITE.equals(uri.toString()) ? "\n\n" + RESERVATION_NOTE : VMS.equals(uri.toString()) ? "\n\n" + VMS_NOTE : ""),
             "확인 후 접속", () -> openBrowser(uri));
     }
 
@@ -60,7 +62,7 @@ final class RedConnectLauncher {
         try {
             Uri uri = Uri.parse(raw);
             return "https".equals(uri.getScheme()) && uri.getUserInfo() == null
-                && uri.getPort() == -1 && HOSTS.contains(uri.getHost()) ? uri : null;
+                && uri.getPort() == -1 && (HOSTS.contains(uri.getHost()) || VMS.equals(uri.toString())) ? uri : null;
         } catch (RuntimeException error) { return null; }
     }
 

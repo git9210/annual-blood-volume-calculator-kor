@@ -15,6 +15,13 @@ export const LAYOUT_WIDGETS={
     {id:'plans',label:'나의 장기 계획',kind:'full'},
     {id:'restrictions',label:'헌혈 제한 기간',kind:'full'},
     {id:'annual',label:'앞으로 12개월의 연간 계산량',kind:'full'}
+  ],
+  records:[
+    {id:'history-status',label:'최근 1년 기록 입력 확인',kind:'full'},
+    {id:'entry',label:'기록 추가 · 증명서',kind:'full'},
+    {id:'counts',label:'헌혈 종류별 횟수',kind:'full'},
+    {id:'history',label:'헌혈 기록 목록',kind:'full'},
+    {id:'volunteer',label:'봉사시간',kind:'full'}
   ]
 };
 export function layoutOrder(page,layouts){

@@ -209,7 +209,22 @@ public class RedConnectLauncherTest {
             check(app.launched == launched && p.message.contains("데이터 요금") && p.message.contains(url));
             p.positive.onClick(p,1); check(app.launched == ++launched && app.lastIntent.data.toString().equals(url));
         }
-        for (String bad : new String[]{null,"", "http://www.bloodinfo.net/", "https://www.bloodinfo.net.evil/", "https://user@www.bloodinfo.net/", "https://www.bloodinfo.net:443/", "javascript:alert(1)", "intent://www.bloodinfo.net", "file:///sdcard/private", "https://example.com/", "https://github.com@evil.example/"}) {
+        String vms = "https://www.vms.or.kr/auth/blood.do";
+        launcher.requestWeb(vms); AlertDialog vmsCanceled=AlertDialog.last;
+        check(app.launched == launched && vmsCanceled.title.equals("인터넷에 연결할까요?"));
+        check(vmsCanceled.message.contains(vms) && vmsCanceled.message.contains("데이터 요금") && vmsCanceled.message.contains("전달하지 않습니다"));
+        check(vmsCanceled.message.contains("실제 인정·연계 내역과 다를 수 있습니다") && vmsCanceled.message.contains("VMS에서 직접 진행"));
+        check(vmsCanceled.message.contains("자동으로 연계되지 않습니다") && !vmsCanceled.message.contains("실제 예약 시"));
+        check(vmsCanceled.positiveLabel.equals("확인 후 접속"));
+        vmsCanceled.negative.onClick(vmsCanceled,0);vmsCanceled.positive.onClick(vmsCanceled,1);check(app.launched == launched);
+        launcher.requestWeb(vms);AlertDialog vmsApproved=AlertDialog.last;vmsApproved.positive.onClick(vmsApproved,1);
+        check(app.launched == ++launched && app.lastIntent.data.toString().equals(vms));
+        check(app.lastIntent.selector != null && app.lastIntent.selector.data.toString().equals("https://"));
+        check(app.lastIntent.extras == null && !app.lastIntent.fileGrant && app.packages.queries == queries);
+        vmsApproved.positive.onClick(vmsApproved,1);check(app.launched == launched);
+        launcher.requestWeb(vms);AlertDialog vmsPaused=AlertDialog.last;foreground[0]=false;launcher.cancelPending();foreground[0]=true;
+        vmsPaused.positive.onClick(vmsPaused,1);check(app.launched == launched);
+        for (String bad : new String[]{null,"", "http://www.bloodinfo.net/", "https://www.bloodinfo.net.evil/", "https://user@www.bloodinfo.net/", "https://www.bloodinfo.net:443/", "javascript:alert(1)", "intent://www.bloodinfo.net", "file:///sdcard/private", "https://example.com/", "https://github.com@evil.example/", "http://www.vms.or.kr/auth/blood.do", "https://www.vms.or.kr.evil/auth/blood.do", "https://user@www.vms.or.kr/auth/blood.do", "https://www.vms.or.kr:443/auth/blood.do", "https://www.vms.or.kr/other", "https://www.vms.or.kr/auth/blood.do?records=private", "https://www.vms.or.kr/auth/blood.do#private"}) {
             launcher.requestWeb(bad); AlertDialog p=AlertDialog.last;
             check(p.title.equals("열 수 없는 주소입니다") && p.positiveLabel.equals("닫기"));
             p.positive.onClick(p,1); check(app.launched == launched);

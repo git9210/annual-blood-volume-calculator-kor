@@ -714,3 +714,17 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 }
 @media(max-width:719px){.header-actions .questionnaire-link{top:66px;right:max(16px,env(safe-area-inset-right,0px))}}
 @media(max-width:399px){.summary-title{font-size:14px}.summary-title .badge{margin-left:3px;padding:2px 6px}.plan-list>summary,.restriction-list>summary,.dashboard-list>summary{gap:5px}.date-occasion{font-size:11px}}
+
+/* Completed donation totals only; keep the VMS link smaller with a full touch target. */
+.volunteer-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.volunteer-summary>div{min-width:0;padding:14px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface,var(--green-soft));color:var(--ink)}
+.volunteer-summary dt{font-size:13px;font-weight:600;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
+.volunteer-summary dd{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;margin:6px 0 0;font-size:clamp(22px,5vw,28px);font-weight:750;line-height:1.4;font-variant-numeric:tabular-nums}
+.volunteer-summary dd span{font-size:13px;font-weight:600}
+.volunteer-basis{font-size:12px;line-height:1.7;color:var(--ink)}
+.volunteer-link{display:inline-flex;align-items:center;min-height:44px;padding:6px 0;font-size:12px;font-weight:600;line-height:1.6;text-underline-offset:3px}
+
+/* Each records widget has its own spacing in the shared screen layout. */
+.records-widgets .screen-widget-content>.notice{margin:0}
+.records-widgets .donation-counts{margin:0}
+.records-widgets #records-list{margin-top:0}

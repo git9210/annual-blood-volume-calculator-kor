@@ -21,7 +21,7 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records',freshIn
   const initial=savedState??fixture(count),events={},elements=new Map(),prompts=[],finished=[],requests=[],exports=[],timers=new Map();let timerId=0,currentDate=date;
   let networkFailure=false,release=null;
   const node=key=>({innerHTML:'',textContent:'',dataset:{},style:{},classList:{add(){},remove(){},toggle(){}},
-    addEventListener:(event,fn)=>events[key+':'+event]=fn,removeEventListener(){},setAttribute(){},querySelectorAll:()=>[],
+    addEventListener:(event,fn,capture)=>events[key+':'+event+(capture?':capture':'')]=fn,removeEventListener(){},setAttribute(){},querySelectorAll:()=>[],
     scrollIntoView(){},focus(){},showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const match of readFileSync(new URL('index.html',assets),'utf8').matchAll(/id="([^"]+)"/g))elements.set('#'+match[1],node('#'+match[1]));
   for(const key of ['#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status','#screen-widgets','#event-form','#event-feedback','#import-text','#save-import','#parse-import','#import-preview','#draft-start','#draft-months','#draft-preference','#draft-preview','#generate-draft','#save-draft'])elements.set(key,node(key));
@@ -31,7 +31,7 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records',freshIn
     pageHTML=html;for(const key of detailsKeys)elements.delete(key);detailsKeys.clear();
     for(const match of html.matchAll(/<details\b([^>]*)>/g)){
       const id=match[1].match(/\bid="([^"]+)"/)?.[1];if(!id)continue;
-      const key='#'+id,element=node(key);element.open=/\bopen(?:\s|$|=)/.test(match[1]);elements.set(key,element);detailsKeys.add(key);
+      const key='#'+id,element=node(key);element.id=id;element.tagName='DETAILS';element.open=/\bopen(?:\s|$|=)/.test(match[1]);elements.set(key,element);detailsKeys.add(key);
     }
   }});
   elements.get('#event-form').elements={date:{value:'2026-10-01'},type:{value:'plasma'}};
@@ -58,6 +58,7 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records',freshIn
     setToday:value=>{currentDate=value;run('refreshLocalDay()');},
     relaunch:(hash='')=>harness(count,{savedState:JSON.parse(storage.getItem('blood-note-v1')),date:currentDate,hash,savedMarker:storage.getItem('blood-note-onboarding-v1')}),
     html:()=>elements.get('#app').innerHTML,read:()=>JSON.parse(storage.getItem('blood-note-v1')),
+    fold:(id,open)=>{const target=elements.get('#'+(id==='long-term-plans'||id==='restriction-periods'?id:'dashboard-'+id));target.open=open;events['#app:toggle:capture']({target});},
     ids:()=>[...elements.get('#app').innerHTML.matchAll(/data-action="edit-record" data-id="([^"]+)"/g)].map(match=>match[1]),
     click:(action,data={})=>{const button={dataset:{action,...data},disabled:false};events['document:click']({target:{closest:selector=>selector==='[data-action]'?button:null},preventDefault(){}});},
     change:(id,value)=>events['#app:change']({target:{id,value,dataset:{}}}),
@@ -323,7 +324,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.0.3/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.2.0/);
   assert.equal(h.requests.length,0);
 });
 
@@ -334,7 +335,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v4.0.3/);
+  assert.match(h.html(),/현재 v4.2.0/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -764,10 +765,10 @@ test('Old backups default to both Red Connect shortcuts on and failed or demo se
   assert.equal(h.requests.length,0);
 });
 
-test('Screen editing is offered only on the two editable pages and requires current-page confirmation',()=>{
+test('Screen editing is offered on all three content pages and requires current-page confirmation',()=>{
   const h=harness(2),before=h.read();
-  for(const page of ['records','settings']){h.click(page);assert.equal(h.elements.get('#layout-toggle').hidden,true);h.click('layout-request');assert.equal(h.run('screenEditor'),null);}
-  for(const page of ['dashboard','planner']){
+  for(const page of ['settings']){h.click(page);assert.equal(h.elements.get('#layout-toggle').hidden,true);h.click('layout-request');assert.equal(h.run('screenEditor'),null);}
+  for(const page of ['dashboard','planner','records']){
     h.click(page);assert.equal(h.elements.get('#layout-toggle').hidden,false);h.click('layout-request');
     assert.match(h.elements.get('#dialog-content').innerHTML,/화면을 편집할까요/);assert.equal(h.run('screenEditor'),null);
     h.click('close-dialog');assert.deepEqual(h.read(),before);
@@ -853,8 +854,69 @@ test('Encrypted backups retain both saved layouts; restoring an old backup prese
 
 const visibleWidgetIds=html=>[...html.matchAll(/data-layout-id="([^"]+)"/g)].map(match=>match[1]);
 const hiddenWidgetIdsInHTML=html=>[...html.matchAll(/data-hidden-layout-id="([^"]+)"/g)].map(match=>match[1]);
+test('Record widgets move, hide and restore across restart in every theme without changing records, other layouts or volunteer totals',()=>{
+  for(const theme of ['blood','pastel','initial']){
+    const saved={...fixture(201),theme,screenLayouts:{dashboard:screenLayout.layoutOrder('dashboard').reverse(),planner:screenLayout.layoutOrder('planner').reverse()},dashboardSections:{recent:false},plannerSections:{plans:true,restrictions:false}};
+    const h=harness(201,{savedState:saved}),before=h.read();assert.deepEqual(visibleWidgetIds(h.html()),screenLayout.layoutOrder('records'));assert.equal(h.elements.get('#layout-toggle').hidden,false);
+    h.click('layout-request');assert.equal(h.run('screenEditor'),null);h.click('layout-begin',{layoutPage:'records'});
+    h.run("moveScreenWidget('volunteer',0,'history-status')");h.click('layout-up',{id:'history'});h.click('layout-hide',{id:'counts'});
+    const expected=visibleWidgetIds(h.html());assert.equal(expected[0],'volunteer');assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),['counts']);assert.deepEqual(h.read(),before);
+    h.click('layout-save');assert.deepEqual(visibleWidgetIds(h.html()),expected);assert.doesNotMatch(h.html(),/data-count-type=/);assert.deepEqual(volunteerHours(h),{total:804,year:0});
+    const restarted=h.relaunch('#records');assert.deepEqual(visibleWidgetIds(restarted.html()),expected);assert.deepEqual(restarted.read().screenHidden.records,['counts']);
+    restarted.change('record-filter','plasma');restarted.click('records-next');assert.equal(restarted.ids().length,5);assert.deepEqual(volunteerHours(restarted),{total:804,year:0});
+    assert.deepEqual(restarted.read().screenLayouts.dashboard,before.screenLayouts.dashboard);assert.deepEqual(restarted.read().screenLayouts.planner,before.screenLayouts.planner);
+    const after=restarted.read();delete after.screenLayouts.records;delete after.screenHidden;assert.deepEqual(after,before);assert.equal(h.requests.length+restarted.requests.length,0);
+  }
+});
+
+test('A failed records layout save preserves the old state and can be retried, while cancel and back discard the draft',()=>{
+  const h=harness(2),before=h.read();h.click('layout-request');h.click('layout-begin',{layoutPage:'records'});h.click('layout-up',{id:'volunteer'});h.click('layout-hide',{id:'entry'});
+  const draft=visibleWidgetIds(h.html()),write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-save');
+  assert.deepEqual(h.read(),before);assert.equal(h.run('screenEditor.page'),'records');assert.deepEqual(visibleWidgetIds(h.html()),draft);assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  h.storage.setItem=write;h.click('layout-save');const saved=h.read();assert.deepEqual(h.relaunch('#records').read(),saved);
+  for(const cancel of ['button','back']){
+    h.click('layout-request');h.click('layout-begin',{layoutPage:'records'});h.click('layout-show',{id:'entry'});h.click('layout-down',{id:'history-status'});
+    if(cancel==='button')h.click('layout-cancel');else assert.equal(h.window.bloodNoteHandleBack(),true);
+    assert.deepEqual(h.read(),saved);assert.deepEqual(visibleWidgetIds(h.html()),draft);
+  }
+  assert.equal(h.requests.length,0);
+});
+
+test('Encrypted backups include records layouts and legacy backups lacking that page preserve the current records order and visibility',async()=>{
+  const layouts={dashboard:screenLayout.layoutOrder('dashboard').reverse(),planner:screenLayout.layoutOrder('planner').reverse(),records:screenLayout.layoutOrder('records').reverse()};
+  const saved={...fixture(2),screenLayouts:layouts,screenHidden:{dashboard:['recent'],planner:['calendar'],records:['entry','counts']}};
+  const h=harness(2,{savedState:saved});h.click('export-backup');await h.password('records-layout-backup');const encrypted=h.exports.at(-1).text;
+  assert.doesNotMatch(encrypted,/screenLayouts|screenHidden/);assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'records-layout-backup')),saved);
+  h.click('layout-request');h.click('layout-reset-request',{layoutPage:'records'});h.click('layout-reset-confirm',{layoutPage:'records'});assert.deepEqual(h.read().screenHidden.records,[]);
+  await h.run(`restoreBackup({size:${encrypted.length},text:async()=>${JSON.stringify(encrypted)}})`);await h.password('records-layout-backup');h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),saved);
+  const legacy={...fixture(1),screenLayouts:{dashboard:screenLayout.layoutOrder('dashboard'),planner:screenLayout.layoutOrder('planner')},screenHidden:{dashboard:[],planner:[]}};
+  await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(JSON.stringify(legacy))}})`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read().screenLayouts.records,layouts.records);assert.deepEqual(h.read().screenHidden.records,['entry','counts']);assert.deepEqual(h.read().screenLayouts.dashboard,legacy.screenLayouts.dashboard);assert.deepEqual(h.read().screenHidden.planner,[]);
+  const restarted=h.relaunch('#records');assert.deepEqual(visibleWidgetIds(restarted.html()),['volunteer','history','history-status']);assert.equal(restarted.read().records.length,1);assert.equal(h.requests.length+restarted.requests.length,0);
+});
+
+test('Records reset requires its confirmation, restores only its own widgets, and retains the pending reset if storage fails',()=>{
+  const saved={...fixture(2),screenLayouts:Object.fromEntries(['dashboard','planner','records'].map(view=>[view,screenLayout.layoutOrder(view).reverse()])),screenHidden:{dashboard:['recent'],planner:['calendar'],records:['entry','history','volunteer']}};
+  const h=harness(2,{savedState:saved}),before=h.read();h.click('layout-reset-confirm',{layoutPage:'records'});assert.deepEqual(h.read(),before);
+  h.click('layout-request');h.click('layout-reset-request',{layoutPage:'records'});assert.match(h.elements.get('#dialog-content').innerHTML,/헌혈 기록 화면/);h.click('layout-reset-cancel',{layoutPage:'records'});assert.deepEqual(h.read(),before);
+  h.click('layout-reset-request',{layoutPage:'records'});const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('layout-reset-confirm',{layoutPage:'records'});assert.deepEqual(h.read(),before);assert.equal(h.run('layoutPrompt.kind'),'reset');
+  h.storage.setItem=write;h.click('layout-reset-confirm',{layoutPage:'records'});assert.deepEqual(visibleWidgetIds(h.html()),screenLayout.layoutOrder('records'));assert.deepEqual(h.read().screenHidden.records,[]);
+  const after=h.read();after.screenLayouts.records=before.screenLayouts.records;after.screenHidden.records=before.screenHidden.records;assert.deepEqual(after,before);assert.equal(h.requests.length,0);
+});
+
+test('Hidden record widgets skip rendering until an inert editor preview is needed, and preview links cannot open external apps',()=>{
+  const h=harness(2,{savedState:{...fixture(2),screenHidden:{records:['entry','counts','history','volunteer']}}}),before=h.read();
+  assert.deepEqual(visibleWidgetIds(h.html()),['history-status']);assert.doesNotMatch(h.html(),/data-action="add-record"|data-count-type=|id="records-list"|data-volunteer-hours=/);
+  h.run('let recordWidgetRenderCalls=0;const savedRecordCounts=recordCounts,savedRecordHistory=recordHistorySection,savedVolunteerSection=volunteerHoursSection;recordCounts=(...args)=>{recordWidgetRenderCalls++;return savedRecordCounts(...args);};recordHistorySection=(...args)=>{recordWidgetRenderCalls++;return savedRecordHistory(...args);};volunteerHoursSection=(...args)=>{recordWidgetRenderCalls++;return savedVolunteerSection(...args);};render();');
+  assert.equal(h.run('recordWidgetRenderCalls'),0);h.click('layout-request');h.click('layout-begin',{layoutPage:'records'});assert.equal(h.run('recordWidgetRenderCalls'),3);
+  assert.equal((h.html().match(/data-widget-preview inert/g)||[]).length,5);assert.equal((h.html().match(/id="records-list"/g)||[]).length,1);
+  const calls=[];h.window.BloodNoteAndroid.openLink=url=>calls.push(url);let prevented=false,stopped=false;
+  h.events['document:click:capture']({target:{closest:selector=>selector==='[data-widget-preview]'?{}:{href:'https://www.vms.or.kr/auth/blood.do'}},preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});
+  assert.equal(prevented,true);assert.equal(stopped,true);assert.deepEqual(calls,[]);assert.deepEqual(h.read(),before);h.click('layout-cancel');assert.deepEqual(visibleWidgetIds(h.html()),['history-status']);assert.equal(h.requests.length,0);
+});
+
 test('Minus hides draft items below the draggable list, plus restores them at the end, and cancel/back discard both changes',()=>{
-  for(const view of ['dashboard','planner']){
+  for(const view of ['dashboard','planner','records']){
     const h=harness(2,{hash:'#'+view}),before=h.read(),original=visibleWidgetIds(h.html()),id=original[0];
     h.click('layout-request');h.click('layout-begin',{layoutPage:view});h.click('layout-hide',{id});
     assert.deepEqual(visibleWidgetIds(h.html()),original.slice(1));assert.deepEqual(hiddenWidgetIdsInHTML(h.html()),[id]);
@@ -893,8 +955,8 @@ test('A failed visibility save keeps the previous saved state and the draft can 
   assert.deepEqual(h.read().screenHidden,{dashboard:['next'],planner:['annual']});assert.deepEqual(h.read().records,before.records);
   assert.deepEqual(h.relaunch().read(),h.read());assert.equal(h.requests.length,0);
 });
-test('All widgets may be hidden while editing and restoration remain available on both screens',()=>{
-  for(const view of ['dashboard','planner']){
+test('All widgets may be hidden while editing and restoration remain available on all three screens',()=>{
+  for(const view of ['dashboard','planner','records']){
     const h=harness(1,{hash:'#'+view}),before=h.read(),ids=visibleWidgetIds(h.html());
     h.click('layout-request');h.click('layout-begin',{layoutPage:view});for(const id of ids)h.click('layout-hide',{id});
     assert.deepEqual(visibleWidgetIds(h.html()),[]);assert.equal(hiddenWidgetIdsInHTML(h.html()).length,ids.length);
@@ -1058,6 +1120,63 @@ test('Encrypted backup round-trips the service choice and legacy backups retain 
     h.run(`confirmBackupRestore(validateState(${JSON.stringify(old)}))`);h.elements.get('#confirm-restore').onclick();assert.deepEqual(h.read(),before);
   }
   assert.deepEqual(h.relaunch().read(),before);assert.equal(h.requests.length,0);
+});
+
+const volunteerHours=sample=>Object.fromEntries(['total','year'].map(key=>[key,Number(sample.html().match(new RegExp(`data-volunteer-hours="${key}">([\\d,]+)`))?.[1].replaceAll(',',''))]));
+
+test('Volunteer hours count all four completed donation types equally, respect the VMS start date and calendar year, and show zero for empty history',()=>{
+  const records=[['2009-12-31','whole'],['2010-06-30','plasma'],['2010-07-01','mixed'],['2025-12-31','whole'],['2026-01-01','plasma'],['2026-08-01','platelet'],['2026-10-18','mixed']].map(([date,type],i)=>({id:'volunteer-'+i,date,type}));
+  for(const theme of ['blood','pastel','initial']){
+    const h=harness(0,{savedState:{...fixture(0),theme,records,plans:[{id:'future',date:'2026-11-06',type:'whole'}]}}),before=h.read();
+    assert.deepEqual(volunteerHours(h),{total:20,year:12});assert.match(h.html(),/2026년 봉사시간/);assert.match(h.html(),/2010[.] 7[.] 1[.] 이후 완료 기록 기준/);
+    assert.ok(h.html().indexOf('aria-labelledby="volunteer-title"')>h.html().indexOf('id="records-list"'));assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+    const empty=harness(0,{savedState:{...fixture(0),theme}});assert.deepEqual(volunteerHours(empty),{total:0,year:0});assert.match(empty.html(),/헌혈실적연계하러가기/);
+  }
+});
+
+test('Volunteer totals include the full history regardless of record filter or pagination, including the maximum supported record count',()=>{
+  const h=harness(201),before=h.read();assert.deepEqual(volunteerHours(h),{total:804,year:0});
+  h.click('records-next');h.change('record-page','40');h.change('record-filter','plasma');assert.deepEqual(volunteerHours(h),{total:804,year:0});
+  h.change('record-filter','all');assert.deepEqual(volunteerHours(h),{total:804,year:0});assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+  const records=Array.from({length:3000},(_,i)=>({id:'max-'+i,date:engine.addDays('2026-10-18',-i),type:'plasma'}));
+  const large=harness(0,{savedState:{...fixture(0),records}});assert.equal(volunteerHours(large).total,12000);assert.match(large.html(),/data-volunteer-hours="total">12,000<span>시간/);
+});
+
+test('Volunteer year changes at Korean local New Year without altering total hours, saved data, or using the rolling annual calculation window',()=>{
+  const records=[{id:'last-year',date:'2025-12-31',type:'whole'},{id:'this-year',date:'2026-01-01',type:'mixed'}];
+  const h=harness(0,{date:'2026-12-31',savedState:{...fixture(0),records,plans:[{id:'planned',date:'2027-01-02',type:'plasma'}]}}),before=h.read();
+  assert.deepEqual(volunteerHours(h),{total:8,year:4});let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+  h.setToday('2027-01-01');assert.deepEqual(volunteerHours(h),{total:8,year:0});assert.match(h.html(),/2027년 봉사시간/);
+  assert.equal(writes,0);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Volunteer hours follow record creation, date/type edits, deletion, undo, encrypted backup restore and a fresh launch without storing duplicate totals',async()=>{
+  const h=harness(0);assert.deepEqual(volunteerHours(h),{total:0,year:0});
+  const saveForm=(date,type)=>{const form=h.elements.get('#event-form');form.elements.date.value=date;form.elements.type.value=type;h.events['#event-form:submit']({preventDefault(){}});};
+  h.click('add-record');saveForm('2026-10-18','plasma');assert.deepEqual(volunteerHours(h),{total:4,year:4});const id=h.read().records[0].id;
+  h.click('edit-record',{id});saveForm('2025-12-31','whole');assert.deepEqual(volunteerHours(h),{total:4,year:0});
+  h.click('delete-record',{id});assert.deepEqual(volunteerHours(h),{total:0,year:0});h.run('undoAction()');assert.deepEqual(volunteerHours(h),{total:4,year:0});
+  const before=h.read();assert.equal(Object.hasOwn(before,'volunteerHours'),false);h.click('export-backup');await h.password('volunteer-backup');const encrypted=h.exports.at(-1).text;
+  h.click('delete-record',{id});await h.run(`restoreBackup({size:${encrypted.length},text:async()=>${JSON.stringify(encrypted)}})`);await h.password('volunteer-backup');h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(volunteerHours(h),{total:4,year:0});assert.deepEqual(h.read(),before);const restarted=h.relaunch('#records');assert.deepEqual(volunteerHours(restarted),{total:4,year:0});assert.equal(h.requests.length+restarted.requests.length,0);
+});
+
+test('VMS link routes through native consent, with a cancellable warning and exact URL in the browser fallback, and never forwards donation data',()=>{
+  const h=harness(2),url='https://www.vms.or.kr/auth/blood.do',before=h.read(),calls=[],opens=[],warnings=[];
+  assert.match(h.html(),/class="volunteer-link" href="https:\/\/www[.]vms[.]or[.]kr\/auth\/blood[.]do" target="_blank" rel="noopener noreferrer"/);
+  const capture=()=>h.events['document:click:capture']({target:{closest:()=>({href:url})},preventDefault(){}});
+  h.window.BloodNoteAndroid.openLink=target=>calls.push(target);h.window.open=(...args)=>opens.push(args);capture();assert.deepEqual(calls,[url]);assert.deepEqual(opens,[]);
+  delete h.window.BloodNoteAndroid.openLink;h.window.confirm=message=>{warnings.push(message);return false;};capture();assert.deepEqual(opens,[]);
+  assert.match(warnings[0],/인터넷과 데이터 요금/);assert.match(warnings[0],/실제 인정·연계 내역과 다를 수 있습니다/);assert.match(warnings[0],/VMS에서 직접 진행/);assert.match(warnings[0],/자동으로 연계되지 않습니다/);
+  h.window.confirm=message=>{warnings.push(message);return true;};capture();assert.equal(warnings.length,2);assert.deepEqual(opens,[[url,'_blank','noopener,noreferrer']]);
+  assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+});
+
+test('Volunteer summary appears only at the bottom of donation history and demo hours cannot change real records',()=>{
+  const h=harness(2),before=h.read();assert.deepEqual(volunteerHours(h),{total:8,year:0});
+  for(const page of ['dashboard','planner','settings']){h.click(page);assert.doesNotMatch(h.html(),/id="volunteer-title"/);}
+  h.click('demo');h.click('records');assert.deepEqual(volunteerHours(h),{total:24,year:20});assert.deepEqual(h.read(),before);
+  h.click('demo');h.click('records');assert.deepEqual(volunteerHours(h),{total:8,year:0});assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
 });
 
 test('Questionnaire and qualification links have the same exact destination; external links route to native consent or a cancelable browser warning',()=>{
@@ -1243,7 +1362,7 @@ test('An open popup caption updates with the donor switch and holiday data witho
  h.click('close-dialog');caption.innerHTML='unrelated content';h.run('updateHolidayUI()');assert.equal(caption.innerHTML,'unrelated content');assert.equal(h.requests.length,0);
 });
 
-test('Dashboard sections fold independently and retain their states through redraw, navigation and layout editing without data writes',()=>{
+test('Dashboard folds save immediately and survive a fresh app launch, navigation and layout editing in every theme',()=>{
   for(const theme of ['blood','pastel','initial']){
     const initial={...fixture(201),theme,plans:[{id:'next',date:'2026-11-06',type:'plasma'}]},h=harness(201,{savedState:initial,hash:'#dashboard'}),before=h.read();
     const ids=['next','upcoming','releases','recent'],node=id=>h.elements.get('#dashboard-'+id);
@@ -1254,17 +1373,147 @@ test('Dashboard sections fold independently and retain their states through redr
       assert.ok(content);assert.ok(content.indexOf(title)<content.indexOf('</summary>'));assert.match(content,/class="dashboard-section-body"/);
     }
     let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
-    node('next').open=false;node('releases').open=false;node('recent').open=false;
+    h.fold('next',false);h.fold('releases',false);h.fold('recent',false);
+    assert.equal(writes,3);assert.deepEqual(h.read().dashboardSections,{next:false,releases:false,recent:false});
     const expected=[false,true,false,false];h.run('render()');assert.deepEqual(openStates(),expected);
-    h.click('planner');h.elements.get('#restriction-periods').open=true;h.elements.get('#long-term-plans').open=true;
+    h.click('planner');h.fold('restriction-periods',true);h.fold('long-term-plans',true);
     h.click('records');h.click('dashboard');assert.deepEqual(openStates(),expected);
     h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.click('layout-down',{id:'next'});
     h.click('layout-hide',{id:'recent'});h.click('layout-show',{id:'recent'});assert.deepEqual(openStates(),expected);
     h.click('layout-cancel');assert.deepEqual(openStates(),expected);
-    node('next').open=true;h.run('render()');assert.deepEqual(openStates(),[true,true,false,false]);
+    h.fold('next',true);h.run('render()');assert.deepEqual(openStates(),[true,true,false,false]);
     h.click('planner');assert.equal(h.elements.get('#restriction-periods').open,true);assert.equal(h.elements.get('#long-term-plans').open,true);
-    assert.equal(writes,0);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
-    h.click('dashboard');assert.deepEqual(h.relaunch('#dashboard').run("sectionIds.slice(0,4).map(id=>document.querySelector('#'+id).open)").join(','),'true,true,true,true');
+    assert.equal(writes,6);const stored=h.read();delete stored.dashboardSections;delete stored.plannerSections;assert.deepEqual(stored,before);assert.equal(h.requests.length,0);
+    h.click('dashboard');assert.equal(h.relaunch('#dashboard').run("sectionIds.slice(0,4).map(id=>document.querySelector('#'+id).open)").join(','),'true,true,false,false');
+  }
+});
+
+test('Dashboard fold restoration ignores stale memory and invalid preferences without changing default-open sections',()=>{
+  const h=harness(0,{hash:'#dashboard',savedState:{...fixture(0),dashboardSections:{next:false,upcoming:'false',releases:0,recent:true,unknown:false}}});
+  assert.deepEqual(h.read().dashboardSections,{next:false,recent:true});
+  assert.equal(h.elements.get('#dashboard-next').open,false);assert.equal(h.elements.get('#dashboard-upcoming').open,true);assert.equal(h.elements.get('#dashboard-releases').open,true);
+  let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+  h.run("sectionOpen.set('dashboard-next',true);sectionOpen.set('dashboard-recent',false);render();");
+  assert.equal(h.elements.get('#dashboard-next').open,false);assert.equal(h.elements.get('#dashboard-recent').open,true);
+  for(const id of ['next','upcoming','releases','recent'])h.events['#app:toggle:capture']({target:h.elements.get('#dashboard-'+id)});
+  assert.equal(writes,0);assert.equal(h.requests.length,0);
+  for(const value of [null,[],false,'closed']){const sample=harness(0,{hash:'#dashboard',savedState:{...fixture(0),dashboardSections:value}});assert.equal(sample.read().dashboardSections,undefined);assert.equal(sample.elements.get('#dashboard-next').open,true);}
+});
+
+test('Failed dashboard fold writes restore the saved display; detached or unrelated toggle events do not save',()=>{
+  const h=harness(0,{hash:'#dashboard'});h.fold('recent',false);const before=h.read(),detached=h.elements.get('#dashboard-recent');
+  h.run('render()');let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+  detached.open=true;h.events['#app:toggle:capture']({target:detached});
+  for(const target of [{id:'dashboard-unknown',tagName:'DETAILS',open:false},{id:'dashboard-next',tagName:'DIV',open:false},null])h.events['#app:toggle:capture']({target});
+  assert.equal(writes,0);assert.deepEqual(h.read(),before);
+  h.storage.setItem=()=>{throw Error('full');};h.fold('recent',true);
+  assert.equal(h.elements.get('#dashboard-recent').open,false);assert.deepEqual(h.read(),before);assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+  assert.equal(h.relaunch('#dashboard').elements.get('#dashboard-recent').open,false);assert.equal(h.requests.length,0);
+});
+
+test('Demo and screen-editor previews cannot overwrite real dashboard folds or trigger record undo',()=>{
+  const h=harness(2,{hash:'#dashboard'});h.fold('upcoming',false);const before=h.read();
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'dashboard'});h.fold('upcoming',true);assert.deepEqual(h.read(),before);
+  h.click('layout-cancel');assert.equal(h.elements.get('#dashboard-upcoming').open,false);
+  h.click('demo');h.fold('upcoming',true);h.fold('recent',false);assert.deepEqual(h.read(),before);
+  h.click('demo');assert.equal(h.elements.get('#dashboard-upcoming').open,false);assert.equal(h.elements.get('#dashboard-recent').open,true);
+  h.click('delete-record',{id:'record-0'});assert.equal(h.run('typeof undoAction'),'function');h.fold('recent',false);assert.equal(h.run('undoAction'),null);
+  assert.equal(h.read().records.length,1);assert.equal(h.read().dashboardSections.recent,false);assert.equal(h.requests.length,0);
+});
+
+test('Dashboard folds are included in encrypted backups and restored canonically; older backups retain current folds',async()=>{
+  const h=harness(2,{hash:'#dashboard'});h.fold('next',false);h.fold('upcoming',false);h.fold('releases',false);h.fold('recent',false);const before=h.read();
+  h.click('export-backup');await h.password('dashboard-fold-backup');
+  const raw=await backupCrypto.decryptBackup(JSON.parse(h.exports.at(-1).text),'dashboard-fold-backup');assert.deepEqual(JSON.parse(raw),before);
+  for(const id of ['next','upcoming','releases','recent'])h.fold(id,true);
+  h.run(`confirmBackupRestore(validateState(${raw}))`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),before);for(const id of ['next','upcoming','releases','recent'])assert.equal(h.elements.get('#dashboard-'+id).open,false);
+  const legacy={...before};delete legacy.dashboardSections;h.run(`confirmBackupRestore(validateState(${JSON.stringify(legacy)}))`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),before);const reopened=h.relaunch('#dashboard');assert.deepEqual(reopened.read(),before);assert.equal(reopened.elements.get('#dashboard-next').open,false);assert.equal(h.requests.length+reopened.requests.length,0);
+});
+
+test('Planner folds restore all independent open/closed combinations on a fresh launch for empty and populated lists in every theme',()=>{
+  for(const theme of ['blood','pastel','initial'])for(const populated of [false,true]){
+    const initial={...fixture(2),theme,dashboardSections:{recent:false},
+      plans:populated?[{id:'planned',date:'2026-11-06',type:'plasma'}]:[],
+      restrictions:populated?[{id:'pause',start:'2026-10-20',end:'2026-10-21',reason:'약 복용'}]:[]};
+    const h=harness(2,{hash:'#planner',savedState:initial}),before=h.read();
+    const openStates=sample=>['long-term-plans','restriction-periods'].map(id=>sample.elements.get('#'+id).open);
+    assert.deepEqual(openStates(h),[false,false]);
+    for(const [plans,restrictions] of [[true,false],[false,true],[true,true],[false,false]]){
+      h.fold('long-term-plans',plans);h.fold('restriction-periods',restrictions);
+      h.click('calendar-next');h.click('calendar-prev');h.click('records');h.click('dashboard');h.click('settings');h.click('planner');
+      assert.deepEqual(openStates(h),[plans,restrictions]);
+      const restarted=h.relaunch('#planner');assert.deepEqual(openStates(restarted),[plans,restrictions]);
+      assert.equal(restarted.read().plannerSections?.plans??false,plans);assert.equal(restarted.read().plannerSections?.restrictions??false,restrictions);assert.equal(restarted.requests.length,0);
+    }
+    const after=h.read();delete after.plannerSections;assert.deepEqual(after,before);assert.equal(h.requests.length,0);
+  }
+});
+
+test('Planner fold validation preserves default-closed lists, ignores invalid or stale values, and avoids duplicate writes or recalculation',()=>{
+  const h=harness(0,{hash:'#planner',savedState:{...fixture(0),plannerSections:{plans:true,restrictions:'true',unknown:true}}});
+  assert.deepEqual(h.read().plannerSections,{plans:true});
+  assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,false);
+  h.run("sectionOpen.set('long-term-plans',false);sectionOpen.set('restriction-periods',true);render();");
+  assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,false);
+  let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+  h.run('let foldRenderCalls=0;const renderBeforeFold=render;render=(...args)=>{foldRenderCalls++;return renderBeforeFold(...args);};');
+  for(const id of ['long-term-plans','restriction-periods'])h.events['#app:toggle:capture']({target:h.elements.get('#'+id)});
+  assert.equal(writes,0);h.fold('long-term-plans',false);h.fold('restriction-periods',true);assert.equal(writes,2);assert.equal(h.run('foldRenderCalls'),0);
+  for(const value of [null,[],false,'closed',{plans:0,restrictions:1}]){
+    const sample=harness(0,{hash:'#planner',savedState:{...fixture(0),plannerSections:value}});
+    assert.equal(sample.read().plannerSections,undefined);assert.equal(sample.elements.get('#long-term-plans').open,false);assert.equal(sample.elements.get('#restriction-periods').open,false);
+  }
+  assert.equal(h.requests.length,0);
+});
+
+test('Failed planner fold saves restore the last display, while detached nodes and unrelated toggle events cannot write preferences',()=>{
+  for(const savedOpen of [false,true])for(const id of ['long-term-plans','restriction-periods']){
+    const h=harness(0,{hash:'#planner',savedState:{...fixture(0),plannerSections:{plans:savedOpen,restrictions:savedOpen}}});
+    const before=h.read(),detached=h.elements.get('#'+id);h.run('render()');
+    let writes=0;const save=h.storage.setItem;h.storage.setItem=(...args)=>{writes++;save(...args);};
+    detached.open=!savedOpen;h.events['#app:toggle:capture']({target:detached});
+    for(const target of [{id,tagName:'DIV',open:!savedOpen},{id:'toString',tagName:'DETAILS',open:true},{id:'unknown',tagName:'DETAILS',open:true},null])h.events['#app:toggle:capture']({target});
+    assert.equal(writes,0);assert.deepEqual(h.read(),before);
+    h.storage.setItem=()=>{throw Error('full');};h.fold(id,!savedOpen);
+    assert.equal(h.elements.get('#'+id).open,savedOpen);assert.deepEqual(h.read(),before);assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
+    assert.equal(h.relaunch('#planner').elements.get('#'+id).open,savedOpen);assert.equal(h.requests.length,0);
+  }
+});
+
+test('Planner screen editing and demo previews preserve real folds through hide, restore, reorder and save',()=>{
+  const h=harness(2,{hash:'#planner'});h.fold('long-term-plans',true);h.fold('restriction-periods',true);const before=h.read();
+  h.click('layout-request');h.click('layout-begin',{layoutPage:'planner'});h.fold('long-term-plans',false);h.fold('restriction-periods',false);
+  assert.deepEqual(h.read(),before);h.click('layout-hide',{id:'plans'});h.click('layout-show',{id:'plans'});h.click('layout-down',{id:'restrictions'});h.click('layout-save');
+  assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,true);assert.deepEqual(h.read().plannerSections,before.plannerSections);
+  const restarted=h.relaunch('#planner');assert.equal(restarted.elements.get('#long-term-plans').open,true);assert.equal(restarted.elements.get('#restriction-periods').open,true);
+  const saved=h.read();h.click('demo');h.click('planner');h.fold('long-term-plans',false);h.fold('restriction-periods',false);assert.deepEqual(h.read(),saved);
+  h.click('demo');h.click('planner');assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,true);
+  h.click('delete-record',{id:'record-0'});assert.equal(h.run('typeof undoAction'),'function');h.fold('long-term-plans',false);assert.equal(h.run('undoAction'),null);
+  assert.equal(h.read().records.length,1);assert.equal(h.read().plannerSections.plans,false);assert.equal(h.requests.length,0);
+});
+
+test('Planner folds are encrypted in backups, restored without stale state, and retained when restoring a v4.0.4 backup',async()=>{
+  const h=harness(2,{hash:'#planner'});h.fold('long-term-plans',true);h.fold('restriction-periods',true);const before=h.read();
+  h.click('export-backup');await h.password('planner-fold-backup');
+  const raw=await backupCrypto.decryptBackup(JSON.parse(h.exports.at(-1).text),'planner-fold-backup');assert.deepEqual(JSON.parse(raw),before);
+  h.fold('long-term-plans',false);h.fold('restriction-periods',false);
+  h.run(`confirmBackupRestore(validateState(${raw}))`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read(),before);assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,true);
+  const older={...before};delete older.plannerSections;older.dashboardSections={recent:false};h.run(`confirmBackupRestore(validateState(${JSON.stringify(older)}))`);h.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(h.read().plannerSections,before.plannerSections);assert.deepEqual(h.read().dashboardSections,{recent:false});
+  const restarted=h.relaunch('#planner');assert.equal(restarted.elements.get('#long-term-plans').open,true);assert.equal(restarted.elements.get('#restriction-periods').open,true);assert.equal(h.requests.length+restarted.requests.length,0);
+});
+
+test('Planner folds restore on the selected start page and stay independent from dashboard fold preferences',()=>{
+  for(const startPage of ['planner','last']){
+    const h=harness(0,{hash:'#planner',savedState:{...fixture(0),startPage,lastPage:'planner',dashboardSections:{next:false,recent:false}}});
+    h.fold('long-term-plans',true);h.fold('restriction-periods',true);
+    const restarted=h.relaunch();assert.match(restarted.html(),/id="long-term-plans"/);assert.equal(restarted.elements.get('#long-term-plans').open,true);assert.equal(restarted.elements.get('#restriction-periods').open,true);
+    restarted.click('dashboard');assert.equal(restarted.elements.get('#dashboard-next').open,false);assert.equal(restarted.elements.get('#dashboard-recent').open,false);restarted.fold('recent',true);
+    restarted.click('planner');restarted.sort('plans','newest');restarted.sort('restrictions','oldest');assert.equal(restarted.elements.get('#long-term-plans').open,true);assert.equal(restarted.elements.get('#restriction-periods').open,true);
+    assert.deepEqual(restarted.read().plannerSections,{plans:true,restrictions:true});assert.equal(h.requests.length+restarted.requests.length,0);
   }
 });
 
@@ -1276,11 +1525,11 @@ test('Restriction archive link belongs to the collapsible body for zero or many 
     const content=h.html().match(/<details id="restriction-periods"[^>]*>([\s\S]*?)<\/details>/)?.[1];
     assert.ok(content);assert.ok(content.indexOf('data-action="restriction-archive"')>content.indexOf('</summary>'));
     assert.equal((content.match(/data-action="restriction-archive"/g)||[]).length,1);
-    h.elements.get('#restriction-periods').open=true;h.click('restriction-archive');
+    h.fold('restriction-periods',true);h.click('restriction-archive');
     assert.match(h.elements.get('#dialog-content').innerHTML,new RegExp(`<span class="badge">${count}건</span>`));
     h.click('close-dialog');h.run('render()');assert.equal(h.elements.get('#restriction-periods').open,true);
-    h.elements.get('#restriction-periods').open=false;h.run('render()');assert.equal(h.elements.get('#restriction-periods').open,false);
-    assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+    h.fold('restriction-periods',false);h.run('render()');assert.equal(h.elements.get('#restriction-periods').open,false);
+    const stored=h.read();assert.deepEqual(stored.plannerSections,{restrictions:false});delete stored.plannerSections;assert.deepEqual(stored,before);assert.equal(h.requests.length,0);
   }
 });
 
