@@ -371,6 +371,11 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .date-popup-choice.restricted .date-popup-check{background:#a4413b}
 .date-popup-choice.neutral .date-popup-check{background:#788879}
 .date-popup-detail{margin-top:17px}
+.date-popup-summary{margin-bottom:16px}
+.date-popup-range{color:var(--muted);font-size:11px;line-height:1.6;text-align:center;margin-bottom:8px;overflow-wrap:anywhere}
+.date-popup-plan-toggle{display:flex;align-items:center;gap:9px;min-height:44px;font-size:12px;font-weight:650;cursor:pointer}
+.date-popup-plan-toggle input{flex:0 0 auto;width:20px;height:20px;min-height:20px;margin:0;padding:0;accent-color:var(--green)}
+.date-popup-preview-note{color:var(--muted);font-size:11px;line-height:1.6}
 .date-popup-note{font-size:12px;color:#748177;text-align:center;line-height:1.7;word-break:keep-all}
 .date-popup-totals{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;padding:12px;border-radius:12px;background:#f7f8f4;text-align:center}
 .date-popup-totals>span{font-size:11px;color:#718078}

@@ -100,7 +100,7 @@ test('A restricted calendar date still calculates complete volume and reasons wh
   h.click('day',{date:'2026-10-20'});h.click('day-type',{type:'plasma'});
   assert.ok(h.run('eligibilityCalls')>0);
   const popup=h.elements.get('#dialog-content').innerHTML;
-  assert.match(popup,/계획 후 연간 계산량/);assert.match(popup,/475/);assert.match(popup,/1,685/);
+  assert.match(popup,/선택 후 연간 계산량/);assert.match(popup,/475/);assert.match(popup,/1,685/);
   assert.match(popup,/약 복용/);assert.match(popup,/간격 필요/);
   assert.match(popup,/제한 있는 가정으로 저장/);assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
 });
@@ -324,7 +324,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.2.0/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.3.0/);
   assert.equal(h.requests.length,0);
 });
 
@@ -335,7 +335,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v4.2.0/);
+  assert.match(h.html(),/현재 v4.3.0/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);

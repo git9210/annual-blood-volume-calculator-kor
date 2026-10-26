@@ -212,6 +212,71 @@ test('Date tap opens four ordered choices and holiday title; selection/cancel ne
   h.click('close-dialog');assert.equal(h.open(),false);assert.deepEqual(h.read(),before);
   assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
 });
+function dayTotals(h){
+  const totals=h.html().match(/<div class="date-popup-totals"[^>]*>(.*?)<\/div>/s)?.[1];
+  assert.ok(totals,'Annual totals must be visible before selecting a type');
+  return [...totals.matchAll(/<strong[^>]*>([-\d,]+) <small>mL<\/small>/g)].map(match=>Number(match[1].replaceAll(',','')));
+}
+test('Date popup shows the selected date annual window before a choice and respects the boundary setting',()=>{
+  const records=[{id:'boundary',date:'2025-11-30',type:'whole'},{id:'inside',date:'2025-12-01',type:'plasma'},{id:'recent',date:'2026-10-01',type:'mixed'}];
+  const h=harness({records}),before=h.read(),writes=h.writes();
+  h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[135,2025]);
+  assert.match(h.html(),/2025\. 12\. 1\. ~ 2026\. 11\. 30\./);assert.doesNotMatch(h.html(),/data-action="day-prior-plans"/);
+  h.run("state.rules.boundary='include'");h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[565,1595]);
+  h.click('day',{date:'2027-12-01'});assert.deepEqual(dayTotals(h),[0,2160]);
+  assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
+});
+test('All four types use configured amounts and a second tap restores the unselected totals',()=>{
+  const h=harness({records:[{id:'recent',date:'2026-10-01',type:'plasma'}]});
+  h.run("state.rules.volumes={whole:400,plasma:40,platelet:80,mixed:95}");h.click('day',{date:'2026-11-30'});
+  for(const [type,volume] of Object.entries({whole:400,plasma:40,platelet:80,mixed:95})){
+    h.click('day-type',{type});assert.deepEqual(dayTotals(h),[40+volume,2120-volume]);
+    assert.match(h.html(),new RegExp(`data-type="${type}" aria-pressed="true"`));
+    h.click('day-type',{type});assert.deepEqual(dayTotals(h),[40,2120]);
+    assert.doesNotMatch(h.html(),/aria-pressed="true"/);assert.match(h.html(),/data-action="day-confirm" disabled/);
+  }
+  h.click('day-confirm');assert.equal(h.read().plans.length,0);assert.equal(h.requests(),0);
+});
+test('Earlier-plan inclusion changes totals and eligibility together without changing saved plans',()=>{
+  const h=harness({records:[{id:'done',date:'2026-10-01',type:'mixed'}],plans:[{id:'earlier',date:'2026-11-20',type:'whole'}]}),before=h.read(),writes=h.writes();
+  h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[520,1640]);
+  assert.match(h.html(),/앞선 헌혈 계획 1건 포함/);assert.match(h.html(),/data-action="day-prior-plans" checked/);
+  h.click('day-type',{type:'plasma'});assert.deepEqual(dayTotals(h),[565,1595]);assert.match(h.html(),/56일 간격 필요/);
+  h.click('day-prior-plans');assert.deepEqual(dayTotals(h),[135,2025]);assert.doesNotMatch(h.html(),/56일 간격 필요/);
+  assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);assert.match(h.html(),/date-popup-status">가능/);
+  h.click('restriction-new');h.click('restriction-back');assert.deepEqual(dayTotals(h),[135,2025]);
+  assert.equal(h.run('dayPopup.includePriorPlans'),false);
+  h.click('day-prior-plans');assert.deepEqual(dayTotals(h),[565,1595]);assert.match(h.html(),/56일 간격 필요/);
+  assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
+});
+test('A same-day saved plan is counted once; deselection does not cancel the stored plan',()=>{
+  const h=harness({plans:[{id:'earlier',date:'2026-11-01',type:'plasma'},{id:'same',date:'2026-11-30',type:'mixed'}]}),before=h.read(),writes=h.writes();
+  h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[135,2025]);
+  h.click('day-type',{type:'mixed'});assert.deepEqual(dayTotals(h),[45,2115]);
+  assert.match(h.html(),/data-action="day-confirm" disabled/);h.click('day-confirm');assert.deepEqual(h.read(),before);
+  h.click('close-dialog');h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[135,2025]);
+  h.click('day-prior-plans');assert.deepEqual(dayTotals(h),[90,2070]);
+  h.click('day-confirm');assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);
+});
+test('Later plans never enter selected-day totals and their conflict warnings survive earlier-plan exclusion',()=>{
+  const h=harness({plans:[{id:'earlier',date:'2026-11-01',type:'plasma'},{id:'later',date:'2026-12-10',type:'plasma'}]}),before=h.read();
+  h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[45,2115]);h.click('day-prior-plans');assert.deepEqual(dayTotals(h),[0,2160]);
+  h.click('day-type',{type:'whole'});assert.deepEqual(dayTotals(h),[430,1730]);assert.match(h.html(),/2026\. 12\. 10\. 목요일 혈장 계획에 영향/);
+  h.click('day-confirm');assert.deepEqual(h.read().plans.slice(0,2),before.plans);assert.equal(h.read().plans.length,3);
+  assert.equal(Object.hasOwn(h.read(),'includePriorPlans'),false);assert.equal(h.requests(),0);
+});
+test('Completed and past dates show historical totals without double-counting or editing actual records',()=>{
+  const h=harness({records:[{id:'old',date:'2026-09-01',type:'plasma'},{id:'same',date:'2026-10-01',type:'mixed'}]}),before=h.read();
+  h.click('day',{date:'2026-09-15'});assert.deepEqual(dayTotals(h),[45,2115]);
+  h.click('day',{date:'2026-10-01'});assert.deepEqual(dayTotals(h),[135,2025]);h.click('day-type',{type:'mixed'});assert.deepEqual(dayTotals(h),[135,2025]);
+  assert.match(h.html(),/헌혈 기록이 저장되어 있습니다/);assert.deepEqual(h.read(),before);
+});
+test('Over-limit choices keep the negative remainder visible and deselection restores the original value',()=>{
+  const h=harness({records:[{id:'done',date:'2026-10-01',type:'mixed'}]});h.run('state.rules.cap=100');
+  h.click('day',{date:'2026-11-30'});assert.deepEqual(dayTotals(h),[90,10]);
+  h.click('day-type',{type:'whole'});assert.deepEqual(dayTotals(h),[520,-420]);assert.match(h.html(),/class="negative">-420/);
+  h.click('day-type',{type:'whole'});assert.deepEqual(dayTotals(h),[90,10]);assert.match(h.html(),/data-action="day-confirm" disabled/);
+});
 test('Confirm saves once; reopening preselects existing type and changing preserves ID',()=>{
   const h=harness();h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'plasma'});h.click('day-confirm');
   const first=h.read();assert.equal(first.plans.length,1);assert.equal(first.records.length,0);
