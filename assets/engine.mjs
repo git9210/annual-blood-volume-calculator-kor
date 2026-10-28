@@ -22,6 +22,26 @@ export function validDate(s){if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test
 // Calculation dates must be ISO, never locale-formatted display strings.
 // Korea uses UTC+09:00; this also works with older WebView locale data, offline.
 export function today(){return new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10);}
+// Completed-history summaries use calendar years/months, independent of
+// rolling-volume rules, display filters and future plans. No totals are stored.
+export const VOLUNTEER_START='2010-07-01',VOLUNTEER_HOURS_PER_DONATION=4;
+export function donationHistorySummary(records,currentDate=today()){
+  if(!validDate(currentDate))throw Error('집계 기준일을 확인해 주세요.');
+  const empty=()=>({counts:{whole:0,plasma:0,platelet:0,mixed:0},count:0,hours:0});
+  const emptyYear=()=>({...empty(),months:Array.from({length:12},empty)});
+  const total=empty(),byYear={},currentYear=Number(currentDate.slice(0,4));let firstYear=currentYear;
+  for(const record of records){
+    if(!record||!validDate(record.date)||record.date<'1900-01-01'||record.date>'2199-12-31'||record.date>currentDate||!Object.hasOwn(TYPES,record.type))continue;
+    const year=Number(record.date.slice(0,4)),month=Number(record.date.slice(5,7))-1;
+    firstYear=Math.min(firstYear,year);
+    const annual=byYear[year]??(byYear[year]=emptyYear());
+    const hours=record.date>=VOLUNTEER_START?VOLUNTEER_HOURS_PER_DONATION:0;
+    for(const period of [total,annual,annual.months[month]]){period.counts[record.type]++;period.count++;period.hours+=hours;}
+  }
+  const years=Array.from({length:currentYear-firstYear+1},(_,i)=>String(currentYear-i));
+  for(const year of years)byYear[year]??=emptyYear();
+  return {total,years,byYear};
+}
 export function addDays(s,n){const d=new Date(s+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
 export function shiftYear(s,n){const [y,m,d]=s.split('-').map(Number),yy=y+n;const max=new Date(Date.UTC(yy,m,0)).getUTCDate();return `${yy}-${String(m).padStart(2,'0')}-${String(Math.min(d,max)).padStart(2,'0')}`;}
 export function yearStart(s){return shiftYear(s,-1);}
@@ -78,11 +98,17 @@ export function inspectPlan(records,plans,rules=DEFAULT_RULES,restrictions=[]){c
 export function simulate(event,records,plans,rules=DEFAULT_RULES,restrictions=[]){
   const baseline=[...records,...plans.filter(e=>e.id!==event.id)];
   const own=assess(event,baseline,rules,restrictions),conflicts=[];
-  if(own.ok){for(const later of plans.filter(e=>e.id!==event.id&&e.date>event.date)){
-    const other=baseline.filter(e=>e.id!==later.id),before=assess(later,other,rules,restrictions),after=assess(later,[...other,event],rules,restrictions);
-    const added=after.issues.filter(i=>!before.issues.some(b=>b.code===i.code&&b.text===i.text));
-    if(added.length)conflicts.push({event:later,issues:added});
-  }}
+  if(own.ok){
+    const waitEnd=addDays(event.date,rules.waits[event.type]);
+    for(const later of plans.filter(e=>e.id!==event.id&&e.date>event.date)){
+      // Once both effects expire, this candidate cannot add an annual amount,
+      // count or waiting-period issue. Keep custom waits and leap boundaries.
+      if(later.date>=waitEnd&&!inWindow(event,later.date,rules))continue;
+      const other=baseline.filter(e=>e.id!==later.id),before=assess(later,other,rules,restrictions),after=assess(later,[...other,event],rules,restrictions);
+      const added=after.issues.filter(i=>!before.issues.some(b=>b.code===i.code&&b.text===i.text));
+      if(added.length)conflicts.push({event:later,issues:added});
+    }
+  }
   return {...own,ok:own.ok&&conflicts.length===0,conflicts};
 }
 export function earliest(type,from,records,plans=[],rules=DEFAULT_RULES,days=1098,restrictions=[]){

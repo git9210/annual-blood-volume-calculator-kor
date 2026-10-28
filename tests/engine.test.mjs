@@ -152,3 +152,33 @@ test('Unordered histories retain annual-boundary totals, exclude future entries 
   assert.equal(assess(candidate,[tie,...history]).previous.id,'tied');
   assert.deepEqual(history,before);
 });
+
+test('Later-plan impact retains leap-year boundaries and waits longer than a year',()=>{
+  const candidate=event('2023-02-28','plasma','candidate');
+  for(const boundary of ['include','exclude']){
+    const rules={...clone(DEFAULT_RULES),cap:90,boundary};
+    for(const date of ['2024-02-28','2024-02-29','2024-03-01']){
+      const result=simulate(candidate,[],[event(date,'mixed','later')],rules);
+      const affected=boundary==='include'&&date<'2024-03-01';
+      assert.equal(result.ok,!affected,`${boundary}: ${date}`);
+      assert.equal(result.conflicts.length,affected?1:0);
+      if(affected)assert.deepEqual(result.conflicts[0].issues.map(issue=>issue.code),['volume']);
+    }
+  }
+  const rules=clone(DEFAULT_RULES);rules.waits.whole=1000;
+  for(const days of [999,1000,1001]){
+    const result=simulate(event('2026-01-01','whole','candidate'),[],[event(addDays('2026-01-01',days),'plasma','later')],rules);
+    assert.equal(result.conflicts.length,days<1000?1:0);
+    if(days<1000)assert.deepEqual(result.conflicts[0].issues.map(issue=>issue.code),['interval']);
+  }
+});
+
+test('Calendar candidates do not recalculate plans beyond both their annual window and waiting period',()=>{
+  let typeReads=0;
+  const plans=Array.from({length:120},(_,i)=>({id:`far-${i}`,date:addDays('2028-01-01',i*30),get type(){typeReads++;return 'plasma';}}));
+  const result=simulate(event('2026-10-26','plasma','candidate'),[],plans);
+  assert.equal(result.ok,true);
+  assert.equal(result.projected,45);
+  assert.deepEqual(result.conflicts,[]);
+  assert.equal(typeReads,0,'unaffected plans should not run their own donation assessment');
+});

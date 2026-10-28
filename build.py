@@ -78,6 +78,7 @@ def main():
     run('java', '-jar', TOOLS / 'lib/apksigner.jar', 'verify', '--verbose', OUTPUT)
     run(TOOLS / 'zipalign', '-c', '-P', '16', '4', OUTPUT)
     info = {'apk': OUTPUT.name, 'package': 'kr.bloodnote.app', 'version': VERSION, 'version_code': VERSION_CODE,
+        'release_tag': 'v' + VERSION,
         'bytes': OUTPUT.stat().st_size, 'sha256': hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
         'source_site_commit': '50610ab9f40c6b27c841547ad5bba16693c49f19',
         'min_sdk': 26, 'target_sdk': 36, 'device_tested': False}

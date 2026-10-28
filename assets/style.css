@@ -733,3 +733,50 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .records-widgets .screen-widget-content>.notice{margin:0}
 .records-widgets .donation-counts{margin:0}
 .records-widgets #records-list{margin-top:0}
+
+/* Completed history: compact entry link and year/month statistics dialog. */
+.rules-confirm-list{margin:0 0 16px;font-size:13px;line-height:1.6}
+.rules-confirm-list>div{padding:10px 0;border-bottom:1px solid var(--line)}
+.rules-confirm-list dt{font-weight:700;overflow-wrap:anywhere}
+.rules-confirm-list dd{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:4px 0 0;color:var(--muted)}
+.rules-confirm-list dd strong{color:var(--ink);font-weight:750}
+.record-statistics-link{display:flex;justify-content:flex-end;margin-top:4px}
+.record-statistics-link .quiet{font-size:12px;min-height:44px;padding:8px 2px}
+dialog.record-statistics-dialog{--statistics-total-bg:#e3eee6;--statistics-total-heading:#d1e4d6;--statistics-hours-bg:#e8eff8;--statistics-hours-heading:#d7e4f4;width:min(560px,calc(100% - 24px));padding:22px;overflow-x:hidden}
+[data-theme=blood] .record-statistics-dialog{--statistics-total-bg:#fae3e8;--statistics-total-heading:#f3cfd9;--statistics-hours-bg:#fceddf;--statistics-hours-heading:#f5dec7}
+[data-theme=pastel] .record-statistics-dialog{--statistics-total-bg:#eee7f6;--statistics-total-heading:#e2d7ee;--statistics-hours-bg:#e3f0ea;--statistics-hours-heading:#cee5d8}
+.statistics-header{display:grid;grid-template-columns:minmax(0,1fr) 106px 44px;column-gap:8px;row-gap:0;align-items:center;margin-bottom:10px}
+.statistics-header h2{margin:0;font-size:20px;line-height:1.35;word-break:keep-all}
+.statistics-header .close{width:44px;height:44px;min-width:44px;min-height:44px}
+.statistics-year{width:100%;max-width:100%;margin:0;padding:8px;min-height:44px;font-size:14px;font-weight:700}
+.statistics-subhead{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.statistics-basis{margin:0;font-size:11px;line-height:1.5;color:var(--muted);word-break:keep-all}
+.statistics-view-actions{display:flex;justify-content:flex-end;flex-shrink:0;margin:0}
+.statistics-view-actions .quiet{min-height:44px;padding:8px 0;font-size:12px}
+.statistics-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 12px}
+.statistics-summary>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--green-soft)}
+.statistics-summary>.statistics-total{background:var(--statistics-total-bg)}
+.statistics-summary>.statistics-hours{background:var(--statistics-hours-bg)}
+.statistics-summary dt{font-size:12px;font-weight:650;color:var(--ink)}
+.statistics-summary dd{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;margin:3px 0 0;font-size:25px;font-weight:800;line-height:1.4;font-variant-numeric:tabular-nums}
+.statistics-summary dd span{font-size:12px;font-weight:600}
+.record-statistics-dialog .donation-counts{margin-top:0}
+.statistics-table-wrap{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.statistics-months{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;text-align:center;font-variant-numeric:tabular-nums}
+.statistics-months th,.statistics-months td{padding:10px 2px;border-bottom:1px solid var(--line);line-height:1.4;overflow-wrap:anywhere}
+.statistics-months th{font-weight:700}
+.statistics-months thead{background:var(--green-soft);color:var(--green);font-size:11px}
+.statistics-months tbody th{font-size:12px}
+.statistics-months .statistics-total{background:var(--statistics-total-bg);color:var(--ink);font-weight:750}
+.statistics-months .statistics-hours{background:var(--statistics-hours-bg);color:var(--ink);font-weight:650}
+.statistics-months :is(thead,tfoot) .statistics-total{background:var(--statistics-total-heading);font-weight:750}
+.statistics-months :is(thead,tfoot) .statistics-hours{background:var(--statistics-hours-heading);font-weight:750}
+.statistics-empty-month{background:var(--surface,var(--paper))}
+.statistics-months tfoot{background:var(--green-soft);font-weight:750}
+.statistics-months tfoot th,.statistics-months tfoot td{border-bottom:0}
+.statistics-note{margin-top:12px;font-size:11px;color:var(--muted);line-height:1.8;word-break:keep-all;overflow-wrap:anywhere}
+.statistics-empty{padding:16px 0 2px;text-align:center;font-size:12px;color:var(--muted)}
+.statistics-close{width:100%;min-height:44px}
+.record-statistics-dialog .card-foot{margin-top:12px}
+.app-contact{overflow-wrap:anywhere}
+@media(max-width:359px){dialog.record-statistics-dialog{padding:18px 14px}.statistics-header{grid-template-columns:minmax(0,1fr) 98px 44px;column-gap:6px}.statistics-header h2{font-size:18px}.statistics-months{font-size:11px}.statistics-months thead{font-size:10px}.statistics-months tbody th{font-size:11px}}
