@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="kr.bloodnote.app" android:versionCode="59" android:versionName="4.4.4">
+    package="kr.bloodnote.app" android:versionCode="60" android:versionName="4.4.5">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
     <queries>

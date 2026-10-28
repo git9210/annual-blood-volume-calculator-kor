@@ -727,7 +727,9 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .volunteer-summary dd{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;margin:6px 0 0;font-size:clamp(22px,5vw,28px);font-weight:750;line-height:1.4;font-variant-numeric:tabular-nums}
 .volunteer-summary dd span{font-size:13px;font-weight:600}
 .volunteer-basis{font-size:12px;line-height:1.7;color:var(--ink)}
-.volunteer-link{display:inline-flex;align-items:center;min-height:44px;padding:6px 0;font-size:12px;font-weight:600;line-height:1.6;text-underline-offset:3px}
+.volunteer-footer{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.volunteer-link{display:inline-flex;align-items:center;min-height:44px;padding:6px 0;font-size:12px;font-weight:600;line-height:1.6;text-underline-offset:3px;flex-shrink:0}
+.volunteer-note{min-width:0;margin:0;font-size:11px;line-height:1.5;color:var(--ink);text-align:right;word-break:keep-all;overflow-wrap:anywhere}
 
 /* Each records widget has its own spacing in the shared screen layout. */
 .records-widgets .screen-widget-content>.notice{margin:0}

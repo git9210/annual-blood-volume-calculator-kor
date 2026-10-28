@@ -1,27 +1,35 @@
-# 헌혈 계산기 4.4.4
+# 헌혈 계산기 4.4.5
 
 헌혈 기록과 직전 1년의 계산량을 기기 안에서 관리하는 Android 앱입니다.
 개인이 제작한 비공식 도구이며, 실제 헌혈 가능 여부는 기관의 문진·검사로 결정됩니다.
 
 ## 배포 상태
 
-- v4.4.4는 계산 기준 저장 확인창을 추가한 버전입니다. 저장소 코드·태그·APK·공개 소스 ZIP을 같은 버전과 소스 내용으로 배포합니다.
+- v4.4.5는 봉사시간 카드의 기존 링크 행에 VMS 실적 연계 필요 안내를 추가한 버전입니다. 저장소 코드·태그·APK·공개 소스 ZIP을 같은 버전과 소스 내용으로 배포합니다.
 - v4.3.0 소스와 APK는 이전 요청에 따라 GitHub에 게시했습니다.
 - v4.0.3은 앞선 별도 요청에 따라 GitHub에 게시했습니다.
 - [기존 v4.0.1 Release](https://github.com/git9210/annual-blood-volume-calculator-kor/releases/tag/v4.0.1): 사용자가 Play 프로텍트 차단을 보고했습니다. 원인·해제 여부는 확인되지 않았습니다.
 - [전체 버전별 변경점·APK 실측 용량·현재 기능](VERSION-HISTORY.md)
-- 개인 서명키와 비밀번호는 공개하지 않습니다. 아래 버전별 설명은 제작 당시의 변경 이력이며, 현재 동작은 v4.4.4 설명을 우선합니다.
+- 개인 서명키와 비밀번호는 공개하지 않습니다. 아래 버전별 설명은 제작 당시의 변경 이력이며, 현재 동작은 v4.4.5 설명을 우선합니다.
 
 ## 설치
 
-배포용 파일은 `Annual-Blood-Volume-Calculator-4.4.4-Small.apk`입니다.
+배포용 파일은 `Annual-Blood-Volume-Calculator-4.4.5-Small.apk`입니다.
 기존 사용자는 앱을 삭제하지 말고 새 APK를 열어 **업데이트 설치**하세요.
 패키지 `kr.bloodnote.app`, 기존 서명, 저장 키, 암호화 방식과 데이터 형식을 유지합니다.
 새로 설치한 앱은 기록과 계획이 모두 0건입니다.
 
 - Android 8(API 26) 이상. 증명서 PDF 읽기는 Android 15(API 35) 이상.
-- versionName `4.4.4`, versionCode `59`.
+- versionName `4.4.5`, versionCode `60`.
 - 이번부터 작은 월간 달력만 제공합니다. 기존 Large 설치에도 같은 서명의 이 APK로 업데이트할 수 있습니다.
+
+## 4.4.5 개선: 봉사시간 VMS 실적 연계 안내
+
+- 봉사시간 카드의 ‘헌혈실적연계하러가기’ 링크 오른쪽에 **VMS 미연계 시 / 봉사실적 미인정** 문구를 작은 두 줄로 표시합니다.
+- 기존 링크 행의 44px 높이 안에 문구를 배치합니다. 세 테마 × 320/360/412/768px 화면 폭에서 기존 v4.4.4 카드와 비교해 폭·높이가 늘어나지 않고 링크와 문구가 겹치지 않는 것을 확인했습니다. 링크의 44px 터치 영역을 유지합니다.
+- 봉사시간 계산값, VMS 연결 주소와 접속 전 데이터 사용 안내는 기존 동작을 사용합니다. 문구 조회로 저장이나 외부 연결을 실행하지 않습니다.
+- VMS 공식 헌혈실적 연계 안내 및 ‘헌혈을 했는데 실적이 보이질 않아요’ FAQ의 직접 등록 절차를 확인했습니다. 앱의 표시값이 VMS에 자동 등록되는 것은 아닙니다.
+- JavaScript 256개·Java 호스트 검사 563개·Android 셸 검사와 Chromium 42개 화면 조합을 통과했습니다. 자세한 범위는 `REVIEW-4.4.5.md`를 참고하세요.
 
 ## 4.4.4 개선: 계산 기준 저장 확인 및 배포 소스 일치
 
@@ -407,12 +415,12 @@
 
 대상 저장소: <https://github.com/git9210/annual-blood-volume-calculator-kor>
 
-1. AndroidManifest.xml의 versionName·versionCode와 앱의 버전 표시를 함께 올리고 **기존 서명키**로 빌드합니다. 이번 버전은 `4.4.4` / `59`입니다.
-2. 공개 소스 ZIP을 만들고 다음 검사를 통과시킵니다. `python3 tools/verify_release.py --apk /path/Annual-Blood-Volume-Calculator-4.4.4-Small.apk --source-zip /path/Annual-Blood-Volume-Calculator-4.4.4-GitHub-Source.zip`
+1. AndroidManifest.xml의 versionName·versionCode와 앱의 버전 표시를 함께 올리고 **기존 서명키**로 빌드합니다. 이번 버전은 `4.4.5` / `60`입니다.
+2. 공개 소스 ZIP을 만들고 다음 검사를 통과시킵니다. `python3 tools/verify_release.py --apk /path/Annual-Blood-Volume-Calculator-4.4.5-Small.apk --source-zip /path/Annual-Blood-Volume-Calculator-4.4.5-GitHub-Source.zip`
 3. 검증한 공개 소스 파일만 저장소 main에 커밋합니다. 공개 ZIP의 모든 상대 경로와 파일 바이트가 저장소 트리와 같은지 확인합니다. 서명키·비밀번호·개인 자료·APK·ZIP 자체는 소스 커밋에 포함하지 않습니다.
-4. 그 소스 커밋을 가리키는 태그 `v4.4.4`를 생성하고 Release에 같은 버전의 APK·공개 소스 ZIP을 첨부합니다. 이렇게 하면 GitHub 자동 생성 Source code ZIP/TAR도 같은 소스 커밋을 제공합니다.
+4. 그 소스 커밋을 가리키는 태그 `v4.4.5`를 생성하고 Release에 같은 버전의 APK·공개 소스 ZIP을 첨부합니다. 이렇게 하면 GitHub 자동 생성 Source code ZIP/TAR도 같은 소스 커밋을 제공합니다.
 5. **Pre-release로 표시하지 않고** 최신 정식 Release(Latest)로 게시합니다. 태그의 커밋, APK의 버전·해시·용량, ZIP과 저장소의 파일 일치를 다시 확인합니다. 소스 목록에 APK를 올리기만 해서는 앱의 업데이트 확인에 나타나지 않습니다.
-6. 다음 패치 버전 예: `v4.4.5`, APK `Annual-Blood-Volume-Calculator-4.4.5-Small.apk`, versionCode `60` 이상. 이미 공개한 이전 태그는 옮기지 않고 새 버전을 만듭니다.
+6. 다음 패치 버전 예: `v4.4.6`, APK `Annual-Blood-Volume-Calculator-4.4.6-Small.apk`, versionCode `61` 이상. 이미 공개한 이전 태그는 옮기지 않고 새 버전을 만듭니다.
 
 앱은 인증 토큰 없이 GitHub 공개 API의 `/repos/git9210/annual-blood-volume-calculator-kor/releases/latest`를 읽습니다. v4.0.3은 정식 Release, 정확한 Small APK 이름·주소, 0바이트 초과 32MiB 이하의 파일 크기를 확인합니다. 사전 공개판·누락/중복/잘못된 APK 정보는 안내 후 중단합니다. 다운로드 파일의 해시·서명 검증과 설치는 이 앱이 수행하지 않습니다. GitHub 조회 제한·통신 실패 시 안내 후 종료합니다. 새 파일은 제작자가 Release에 게시해야 다른 사용자에게 보입니다.
 
@@ -445,7 +453,7 @@
 
 ## 앞으로의 버전 규칙
 
-이번 배포는 계산 기준 저장 확인창과 배포 소스 일치 검사를 추가한 패치 버전 `v4.4.4`입니다. 아래 규칙을 적용하고, Android 설치용 versionCode는 매 배포마다 증가시킵니다.
+이번 배포는 기존 봉사시간 카드 안에 VMS 실적 연계 안내를 추가한 패치 버전 `v4.4.5`입니다. 아래 규칙을 적용하고, Android 설치용 versionCode는 매 배포마다 증가시킵니다.
 
 | 변경 내용 | 버전 예시 |
 | --- | --- |
@@ -471,9 +479,9 @@
 
 | 파일 | 용도 |
 | --- | --- |
-| `Annual-Blood-Volume-Calculator-4.4.4-Private-Source.zip` | 제작 원본과 기존 서명키·비밀번호, APK를 함께 보관. **공개하거나 다른 사람에게 전달하지 마세요.** |
-| `Annual-Blood-Volume-Calculator-4.4.4-Small.apk` | 다른 사람이 설치할 배포용 APK. 개인 서명키·비밀번호·개인 헌혈 기록·증명서 미포함 |
-| `Annual-Blood-Volume-Calculator-4.4.4-GitHub-Source.zip` | GitHub 업로드용 소스. 개인 서명키·비밀번호·빌드 산출물·개인 첨부파일 제외 |
+| `Annual-Blood-Volume-Calculator-4.4.5-Private-Source.zip` | 제작 원본과 기존 서명키·비밀번호, APK를 함께 보관. **공개하거나 다른 사람에게 전달하지 마세요.** |
+| `Annual-Blood-Volume-Calculator-4.4.5-Small.apk` | 다른 사람이 설치할 배포용 APK. 개인 서명키·비밀번호·개인 헌혈 기록·증명서 미포함 |
+| `Annual-Blood-Volume-Calculator-4.4.5-GitHub-Source.zip` | GitHub 업로드용 소스. 개인 서명키·비밀번호·빌드 산출물·개인 첨부파일 제외 |
 
 APK에는 검증용 서명 인증서는 포함되지만 개인 서명키는 포함되지 않습니다.
 GitHub용 ZIP을 풀고 그 안의 `annual-blood-volume-calculator` 폴더 내용을 저장소 루트에 올리면 됩니다.
@@ -527,7 +535,7 @@ GitHub 소스만 빌드하면 **새 서명키가 로컬에 생성**됩니다. �
 
 ## 검증 범위
 
-현재 v4.4.4 검증 결과는 `REVIEW-4.4.4.md`를 기준으로 확인하세요. 아래 내용은 이전 버전부터 누적한 검사 범위입니다.
+현재 v4.4.5 검증 결과는 `REVIEW-4.4.5.md`를 기준으로 확인하세요. 아래 내용은 이전 버전부터 누적한 검사 범위입니다.
 
 176개 JavaScript 검사 및 앱 흐름 모의 검사: 기존 두 표시와 레드커넥트 버튼 두 위치의 독립적인 켜기·끄기, 재실행·암호화 백업·실패 시 복원·기록과 계산 보존, 첫 화면의 저장·재실행·복원·저장 실패, 잔여량 경계값과 사용자 지정 기준, 완료 날짜와 계획 구분, 날짜 팝업, 변경·취소·되돌리기, 중복 저장 방지, 저장 실패 복구, 자정 변경, 완료 기록 전환, 기존 백업·암호화·PDF 검토·오프라인 공휴일 표시를 확인했습니다.
 마지막 화면의 재실행·설정 화면 복원·백업·저장 실패·되돌리기·예시 체험 격리와 팝업 바깥 터치·안쪽 여백·끌기·취소·PDF 작업 정리 동작을 모의 검사했습니다. 업데이트 버튼의 수동 호출·예시 모드 차단·기록 보존도 검사했습니다. 현재 Java 검사에는 버전·메타데이터 경계/임시 파일 정책 58개와 업데이트 동의·HTTPS·브라우저 연결 대역 168개, PDF 파서 19개, 공휴일 동의 8개, 암호화 11개가 포함됩니다. 제거된 APK 다운로드/파일 검증/설치 콜백 검사는 현재 통과 수에 포함하지 않습니다. 이전 업데이트 기능 제작 시 GitHub Release API와 공개 APK의 크기·검증값을 확인했습니다.
