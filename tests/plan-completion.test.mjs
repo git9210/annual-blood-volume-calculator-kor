@@ -21,7 +21,7 @@ function harness(){
   let currentDate='2026-10-18',requests=0;
   const stub=()=>({innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},removeEventListener(){},setAttribute(){},querySelectorAll(){return[]},focus(){},showModal(){this.open=true},close(){this.open=false}});
   const elements=new Map([...readFileSync(new URL('index.html',root),'utf8').matchAll(/id="([^"]+)"/g)].map(m=>['#'+m[1],stub()]));
-  for(const selector of ['.calendar-scroll','#holiday-status','[data-action="refresh-holidays"]'])elements.set(selector,stub());
+  for(const selector of ['#event-change-feedback','#confirm-event-change','.calendar-scroll','#holiday-status','[data-action="refresh-holidays"]'])elements.set(selector,stub());
   const events={},timers=new Map(),cache=new Map([['blood-note-v1',JSON.stringify(initial)]]);
   let timerId=0;
   const storage={getItem:key=>cache.get(key)||null,setItem:(key,value)=>cache.set(key,value)};
@@ -81,7 +81,7 @@ test('미래 계획의 기록 전환 및 같은 날짜의 중복 기록 생성 �
 
 test('지난 계획 삭제는 실제 기록을 유지하고 되돌리기로 해당 계획 복원',()=>{
   const h=harness(),before=h.read();
-  h.click({action:'delete-plan',id:'past'});
+  h.click({action:'delete-plan',id:'past'});h.click({action:'confirm-event-change'});
   assert.deepEqual(h.read().records,before.records);
   assert.ok(!h.read().plans.some(e=>e.id==='past'));
   h.run('undoAction()');assert.deepEqual(h.read(),before);

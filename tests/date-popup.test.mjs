@@ -105,7 +105,7 @@ function harness({records=[],plans=[],restrictions}={}){
     addEventListener:(type,fn)=>events[key+':'+type]=fn,removeEventListener(){},
     showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const m of readFileSync(new URL('index.html',root),'utf8').matchAll(/id="([^"]+)"/g))nodes.set('#'+m[1],node('#'+m[1]));
-  for(const key of ['#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback','#restriction-form','#restriction-range','#restriction-feedback','.calendar-scroll'])nodes.set(key,node(key));
+  for(const key of ['#event-change-feedback','#confirm-event-change','#holiday-status','[data-action="refresh-holidays"]','#date-popup-title','#event-form','#event-feedback','#restriction-form','#restriction-range','#restriction-feedback','.calendar-scroll'])nodes.set(key,node(key));
   nodes.get('#restriction-form').elements={start:{value:''},reason:{value:''},days:{value:''}};
   let dialogHTML='';
   Object.defineProperty(nodes.get('#dialog-content'),'innerHTML',{get:()=>dialogHTML,set:html=>{
@@ -289,8 +289,15 @@ test('Confirm saves once; reopening preselects existing type and changing preser
 test('Reopen and cancel plan removes only that plan; undo restores it',()=>{
   const plans=[{id:'one',date:'2027-02-19',type:'plasma'},{id:'two',date:'2027-03-19',type:'whole'}];
   const h=harness({plans}),before=h.read();h.click('day',{date:plans[0].date});assert.match(h.html(),/계획 취소/);
-  h.click('day-delete');assert.equal(h.open(),false);assert.deepEqual(h.read().plans,[plans[1]]);
+  h.click('day-delete');h.click('confirm-event-change');assert.equal(h.open(),false);assert.deepEqual(h.read().plans,[plans[1]]);
   h.run('undoAction()');assert.deepEqual(h.read(),before);
+});
+test('Cancelling the calendar plan deletion confirmation returns to its date without a write',()=>{
+  const plans=[{id:'one',date:'2027-02-19',type:'plasma'}],h=harness({plans}),before=h.read(),writes=h.writes();
+  h.click('day',{date:'2027-02-19'});h.click('day-delete');assert.match(h.html(),/이 계획을 삭제할까요/);
+  assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);h.click('close-dialog');
+  assert.equal(h.open(),true);assert.match(h.html(),/2월 19일/);assert.match(h.html(),/계획 취소/);
+  h.click('confirm-event-change');assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);
 });
 test('Restriction and impact on later plans are shown before explicit simulation save',()=>{
   const h=harness({records:[{id:'record',date:'2026-10-20',type:'whole'}]});
@@ -322,8 +329,8 @@ test('Storage failure leaves popup retryable and keeps saved history intact',()=
   const h=harness(),before=h.read();h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'whole'});
   h.fail(true);h.click('day-confirm');assert.deepEqual(h.read(),before);assert.equal(h.open(),true);
   h.fail(false);h.click('day-confirm');assert.equal(h.read().plans.length,1);assert.equal(h.open(),false);
-  h.click('day',{date:'2027-02-19'});h.fail(true);h.click('day-delete');assert.equal(h.read().plans.length,1);assert.equal(h.open(),true);
-  h.fail(false);h.click('day-delete');assert.equal(h.read().plans.length,0);
+  h.click('day',{date:'2027-02-19'});h.fail(true);h.click('day-delete');h.click('confirm-event-change');assert.equal(h.read().plans.length,1);assert.equal(h.open(),true);
+  h.fail(false);h.click('day-delete');h.click('confirm-event-change');assert.equal(h.read().plans.length,0);
 });
 test('Actual records stay read-only in the date popup; edit/add open the normal record editor',()=>{
   const h=harness({records:[{id:'actual',date:'2026-10-01',type:'plasma'}]}),before=h.read();
@@ -400,11 +407,11 @@ test('Exactly the earliest today-or-future plan has a shortcut, and deletion or 
   assert.deepEqual(ids(),['due']);assert.deepEqual(requests(),[]);
   h.click('plan-red-connect',{id:'later'});h.click('plan-red-connect',{id:'past'});assert.deepEqual(requests(),[]);
   const before=h.read();h.click('plan-red-connect',{id:'due'});assert.deepEqual(requests(),[['redconnect']]);assert.deepEqual(h.read(),before);
-  h.click('delete-plan',{id:'due'});assert.deepEqual(ids(),['next']);
+  h.click('delete-plan',{id:'due'});h.click('confirm-event-change');assert.deepEqual(ids(),['next']);
   h.click('plan-red-connect',{id:'due'});assert.equal(requests().length,1);
   h.today('2026-11-07',true);assert.deepEqual(ids(),['later']);
   h.click('plan-red-connect',{id:'next'});assert.equal(requests().length,1);
-  h.click('delete-plan',{id:'later'});assert.deepEqual(ids(),[]);assert.equal(h.requests(),0);
+  h.click('delete-plan',{id:'later'});h.click('confirm-event-change');assert.deepEqual(ids(),[]);assert.equal(h.requests(),0);
 });
 test('Past dates, completed donations and closed or stale date popups cannot open Red Connect',()=>{
   const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}]}),requests=redConnectBridge(h),before=h.read();
@@ -445,7 +452,7 @@ test('Only actual donations get completed-day emphasis; past or due plans do not
   assert.match(cell('2026-10-03'),/is-holiday/);assert.match(cell('2026-10-03'),/개천절/);
   for(const date of ['2026-10-02','2026-10-20','2026-10-30'])assert.doesNotMatch(cell(date),/day-recorded-mark|completed-record| recorded /);
   assert.deepEqual(h.read(),saved);
-  h.click('delete-record',{id:'platelet'});assert.doesNotMatch(cell('2026-10-08'),/day-recorded-mark|completed-record/);
+  h.click('delete-record',{id:'platelet'});h.click('confirm-event-change');assert.doesNotMatch(cell('2026-10-08'),/day-recorded-mark|completed-record/);
   h.run('undoAction()');assert.match(cell('2026-10-08'),/completed-record/);assert.deepEqual(h.read(),saved);
   h.click('day',{date:'2026-10-20'});h.click('day-complete');assert.match(cell('2026-10-20'),/completed-record/);
   assert.equal(h.read().records.length,5);assert.equal(h.requests(),0);

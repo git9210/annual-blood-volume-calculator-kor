@@ -742,7 +742,9 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .rules-confirm-list dt{font-weight:700;overflow-wrap:anywhere}
 .rules-confirm-list dd{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:4px 0 0;color:var(--muted)}
 .rules-confirm-list dd strong{color:var(--ink);font-weight:750}
-.record-statistics-link{display:flex;justify-content:flex-end;margin-top:4px}
+.record-statistics-link{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px}
+.record-total{margin:0;font-size:12px;color:var(--ink);line-height:1.6}
+.record-total strong{font-weight:750}
 .record-statistics-link .quiet{font-size:12px;min-height:44px;padding:8px 2px}
 dialog.record-statistics-dialog{--statistics-total-bg:#e3eee6;--statistics-total-heading:#d1e4d6;--statistics-hours-bg:#e8eff8;--statistics-hours-heading:#d7e4f4;width:min(560px,calc(100% - 24px));padding:22px;overflow-x:hidden}
 [data-theme=blood] .record-statistics-dialog{--statistics-total-bg:#fae3e8;--statistics-total-heading:#f3cfd9;--statistics-hours-bg:#fceddf;--statistics-hours-heading:#f5dec7}
@@ -782,3 +784,40 @@ dialog.record-statistics-dialog{--statistics-total-bg:#e3eee6;--statistics-total
 .record-statistics-dialog .card-foot{margin-top:12px}
 .app-contact{overflow-wrap:anywhere}
 @media(max-width:359px){dialog.record-statistics-dialog{padding:18px 14px}.statistics-header{grid-template-columns:minmax(0,1fr) 98px 44px;column-gap:6px}.statistics-header h2{font-size:18px}.statistics-months{font-size:11px}.statistics-months thead{font-size:10px}.statistics-months tbody th{font-size:11px}}
+/* Calendar year/month picker: use each theme's existing readable colors. */
+.calendar-period{display:flex;align-items:center;gap:3px;flex-wrap:wrap}
+.calendar-period button{display:inline-flex;align-items:center;gap:3px;min-height:44px;padding:0 3px;font:inherit;font-weight:800;color:inherit;white-space:nowrap;border-radius:8px}
+.calendar-period button span{font-size:.65em;color:var(--muted)}
+.calendar-period button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+dialog.calendar-picker-dialog{width:min(430px,calc(100% - 28px));padding:22px;overflow-x:hidden;overscroll-behavior:contain}
+.calendar-picker-dialog .dialog-head{margin-bottom:16px;align-items:center;gap:12px}
+.calendar-picker-dialog .dialog-head h2{font-size:21px}
+.calendar-picker-dialog .dialog-head>div{min-width:0}
+.calendar-picker-parts{display:flex;align-items:center;gap:5px;white-space:nowrap;line-height:1.3}
+.calendar-picker-parts button{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:5px 8px;border-radius:9px;color:var(--ink);font:inherit;font-weight:750;transition:none}
+.calendar-picker-parts button[aria-pressed=true]{color:var(--green);background:var(--green-soft);box-shadow:inset 0 -2px var(--green)}
+.calendar-picker-parts>span:not(.calendar-picker-select-label){color:var(--muted);font-size:16px;font-weight:500}
+.calendar-picker-select-label{font-size:18px;font-weight:700}
+.calendar-picker-parts button:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.calendar-picker-dialog .close{flex:0 0 44px;width:44px;height:44px}
+.calendar-picker-modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:12px;background:var(--green-soft);margin-bottom:14px}
+.calendar-picker-modes button{min-height:44px;padding:7px 3px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;transition:none}
+.calendar-picker-modes button[aria-pressed=true]{background:var(--green);color:#fff}
+.calendar-picker-help{font-size:12px;color:var(--ink);line-height:1.6;margin:0 0 10px}
+.calendar-picker-list{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-height:240px;overflow-y:auto;overscroll-behavior:contain;padding:3px;scroll-padding:3px;border-radius:10px}
+.calendar-picker-option{min-height:48px;padding:8px 3px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-weight:650;color:var(--ink);background:var(--paper);transition:none}
+.calendar-picker-option.is-selected{background:var(--green-soft);border:2px solid var(--green);color:var(--green);font-weight:800}
+.calendar-picker-option:focus-visible,.calendar-picker-modes button:focus-visible,.calendar-picker-wheel:focus-visible{outline:2px solid var(--green);outline-offset:-3px}
+.calendar-picker-wheel-frame{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper)}
+.calendar-picker-wheel-marker{position:absolute;left:10px;right:10px;top:96px;height:48px;border:2px solid var(--green);border-radius:10px;background:var(--green-soft);pointer-events:none}
+.calendar-picker-wheel{position:relative;height:240px;padding:96px 14px;overflow-y:auto;overscroll-behavior:contain;scroll-snap-type:y mandatory;scroll-behavior:auto;touch-action:pan-y;scrollbar-width:none;outline-offset:-3px}
+.calendar-picker-wheel::-webkit-scrollbar{display:none}
+.calendar-picker-wheel-row{height:48px;display:flex;align-items:center;justify-content:center;scroll-snap-align:center;font-size:22px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none}
+.calendar-picker-wheel-row.is-selected{color:var(--green);font-weight:850;font-size:26px}
+.calendar-picker-number-label{display:block;font-size:13px;font-weight:700}
+.calendar-picker-number-label input{display:block;margin:8px 0;font-size:26px;text-align:center;min-height:58px;width:100%;font-weight:750}
+.calendar-picker-preview{margin:14px 0 0;text-align:center;color:var(--green);font-size:14px;font-weight:750;min-height:23px;line-height:1.6}
+.calendar-picker-dialog .card-foot{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.calendar-picker-dialog .card-foot button{min-height:46px}
+.calendar-picker-dialog .form-feedback{margin-top:8px}
+@media(max-width:360px){dialog.calendar-picker-dialog{padding:18px 14px}.calendar-picker-modes button{font-size:12px}.calendar-period{gap:0}.calendar-period button{gap:2px;padding:0 2px}}

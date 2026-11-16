@@ -1,6 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calendarWindow} from '../assets/calendar-view.mjs';
+import {calendarWindow,calendarPartRange,calendarPartValue,calendarWithPart,calendarWithParts} from '../assets/calendar-view.mjs';
+
+test('같은 창에서 고른 연도·월은 원래 일자를 기준으로 동시에 적용하고 중간 월말 보정을 누적하지 않음',()=>{
+  assert.equal(calendarWithParts('2026-01-31',2028,2),'2028-02-29');
+  assert.equal(calendarWithParts('2026-01-31',2028,3),'2028-03-31');
+  assert.equal(calendarWithParts('2028-02-29',2027,3),'2027-03-29');
+  assert.equal(calendarWithParts('2028-02-29',2027,2),'2027-02-28');
+  assert.equal(calendarWithParts('2028-02-29',2000,2),'2000-02-29');
+  assert.equal(calendarWithParts('2028-02-29',2100,2),'2100-02-28');
+  assert.equal(calendarWithParts('2026-01-31',1900,1),'1900-01-31');
+  assert.equal(calendarWithParts('2026-01-31',2199,12),'2199-12-31');
+  for(const [year,month] of [[1899,1],[2200,12],[2028,0],[2028,13],['2e3',1],[2028,'1.5'],[null,1],[2026,'']]){
+    assert.throws(()=>calendarWithParts('2026-01-31',year,month));
+  }
+});
+
+test('연도·월 변경은 다른 부분을 보존하고 윤년·월말 날짜만 유효한 말일로 보정',()=>{
+  assert.equal(calendarWithPart('2028-02-29','year',2027),'2027-02-28');
+  assert.equal(calendarWithPart('2028-02-29','year',2000),'2000-02-29');
+  assert.equal(calendarWithPart('2028-02-29','year',2100),'2100-02-28');
+  assert.equal(calendarWithPart('2026-01-31','month',2),'2026-02-28');
+  assert.equal(calendarWithPart('2028-01-31','month','02'),'2028-02-29');
+  assert.equal(calendarWithPart('2026-12-31','month',4),'2026-04-30');
+  assert.equal(calendarWithPart('2026-11-15','year',1900),'1900-11-15');
+  assert.equal(calendarWithPart('2026-11-15','year',2199),'2199-11-15');
+  assert.equal(calendarWithPart('2026-11-15','month',1),'2026-01-15');
+  assert.equal(calendarWithPart('2026-11-15','month',12),'2026-12-15');
+});
+test('숫자 입력은 지원 범위의 정수만 허용하고 잘못된 입력을 몰래 보정하지 않음',()=>{
+  for(const part of ['year','month']){
+    const {min,max}=calendarPartRange(part);
+    for(const value of ['',null,undefined,NaN,Infinity,'   ','2.0','2.5','2e3','+2','-2','2026x','２０２６',min-1,max+1]){
+      assert.equal(calendarPartValue(part,value),null,`${part}: ${value}`);
+      assert.throws(()=>calendarWithPart('2026-11-15',part,value));
+    }
+    for(const value of [min,max])assert.equal(calendarPartValue(part,String(value)),value);
+  }
+  assert.equal(calendarPartValue('year',' 2026 '),2026);
+  assert.equal(calendarPartValue('month','02'),2);
+  assert.throws(()=>calendarWithPart('1899-12-31','year',2026));
+  assert.throws(()=>calendarWithPart('2200-01-01','month',2));
+  assert.throws(()=>calendarWithPart('2026-02-30','year',2028));
+  assert.throws(()=>calendarPartRange('day'));
+});
 
 test('주간 보기는 월·연도 경계를 넘어 일요일부터 토요일까지 표시',()=>{
   const range=calendarWindow('2027-01-01','week');

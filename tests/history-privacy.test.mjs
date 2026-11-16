@@ -24,7 +24,7 @@ function harness(count=201,{savedState,date='2026-10-18',hash='#records',freshIn
     addEventListener:(event,fn,capture)=>events[key+':'+event+(capture?':capture':'')]=fn,removeEventListener(){},setAttribute(){},querySelectorAll:()=>[],
     scrollIntoView(){},focus(){},showModal(){this.open=true;},close(){this.open=false;events[key+':close']?.();}});
   for(const match of readFileSync(new URL('index.html',assets),'utf8').matchAll(/id="([^"]+)"/g))elements.set('#'+match[1],node('#'+match[1]));
-  for(const key of ['#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status','#screen-widgets','#event-form','#event-feedback','#import-text','#save-import','#parse-import','#import-preview','#draft-start','#draft-months','#draft-preference','#draft-preview','#generate-draft','#save-draft'])elements.set(key,node(key));
+  for(const key of ['#event-change-feedback','#confirm-event-change','#records-list','#record-page','#holiday-status','[data-action="refresh-holidays"]','#backup-current','#confirm-restore','#backup-password-form','#backup-password-status','#screen-widgets','#event-form','#event-feedback','#import-text','#save-import','#parse-import','#import-preview','#draft-start','#draft-months','#draft-preference','#draft-preview','#generate-draft','#save-draft'])elements.set(key,node(key));
   // Replacing the page creates fresh native details elements with their markup defaults.
   const detailsKeys=new Set();let pageHTML='';
   Object.defineProperty(elements.get('#app'),'innerHTML',{get:()=>pageHTML,set:html=>{
@@ -79,6 +79,86 @@ function submitRulesDraft(h,rules){
   h.elements.set('#rules-form',form);h.elements.set('#rules-save-feedback',{hidden:true,textContent:''});h.elements.set('#confirm-save-rules',{disabled:false});
   h.events['#app:submit']({target:form,preventDefault(){}});return form;
 }
+
+test('Record deletion requires explicit confirmation; cancelling and stale confirm actions never write',()=>{
+  const h=harness(2),before=h.read();let writes=0;const save=h.storage.setItem;
+  h.storage.setItem=(...args)=>{writes++;return save(...args);};
+  h.click('delete-record',{id:'record-0'});
+  assert.match(h.elements.get('#dialog-content').innerHTML,/이 헌혈 기록을 삭제할까요/);
+  assert.equal(writes,0);assert.deepEqual(h.read(),before);
+  h.click('close-dialog');h.click('confirm-event-change');assert.equal(writes,0);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');
+  assert.equal(writes,1);assert.equal(h.read().records.length,1);assert.equal(h.read().complete,false);
+  h.click('confirm-event-change');assert.equal(writes,1);h.run('undoAction()');assert.deepEqual(h.read(),before);
+});
+
+test('Single, selected and all plan deletion confirm only the displayed targets and preserve completed records',()=>{
+  const initial={...fixture(1),plans:[{id:'p1',date:'2026-11-01',type:'plasma'},{id:'p2',date:'2026-12-01',type:'mixed'}]};
+  for(const mode of ['single','selected','all']){
+    const h=harness(0,{savedState:initial,hash:'#planner'}),before=h.read();
+    if(mode==='selected')h.run("selectedPlanIds.add('p1')");
+    const request=()=>h.click(mode==='single'?'delete-plan':mode==='selected'?'delete-selected-plans':'delete-all-plans',{id:'p1'});
+    request();assert.deepEqual(h.read(),before);h.click('close-dialog');h.click('confirm-event-change');assert.deepEqual(h.read(),before);
+    request();h.click('confirm-event-change');assert.equal(h.read().plans.length,mode==='all'?0:1);
+    assert.deepEqual(h.read().records,before.records);assert.equal(h.read().complete,true);
+    h.run('undoAction()');assert.deepEqual(h.read(),before);assert.equal(h.requests.length,0);
+  }
+});
+
+test('Record edit previews dates and types before saving, and closing returns to the unchanged draft',()=>{
+  const h=harness(1),before=h.read();h.click('edit-record',{id:'record-0'});
+  const form=h.elements.get('#event-form');form.elements.date.value='2025-12-31';form.elements.type.value='mixed';
+  h.events['#event-form:submit']({preventDefault(){}});
+  const html=h.elements.get('#dialog-content').innerHTML;
+  assert.match(html,/헌혈 기록을 수정할까요/);assert.match(html,/2020\. 1\. 1\./);assert.match(html,/2025\. 12\. 31\./);assert.match(html,/혈소판 혈장/);
+  assert.deepEqual(h.read(),before);h.click('close-dialog');
+  assert.match(h.elements.get('#dialog-content').innerHTML,/id="event-form"/);
+  assert.match(h.elements.get('#dialog-content').innerHTML,/value="2025-12-31"/);
+  assert.match(h.elements.get('#dialog-content').innerHTML,/value="mixed" selected/);
+  h.click('confirm-event-change');assert.deepEqual(h.read(),before);
+  h.events['#event-form:submit']({preventDefault(){}});h.click('confirm-event-change');
+  assert.deepEqual(h.read().records,[{id:'record-0',date:'2025-12-31',type:'mixed'}]);
+  assert.deepEqual(h.relaunch().read(),h.read());h.run('undoAction()');assert.deepEqual(h.read(),before);
+});
+
+test('Failed edit and deletion confirmations preserve saved data and stay retryable without duplicate writes',()=>{
+  for(const kind of ['record-edit','record-delete','plan-delete']){
+    const h=harness(1,{savedState:{...fixture(1),plans:[{id:'p',date:'2026-11-01',type:'plasma'}]}}),before=h.read();
+    if(kind==='record-edit'){
+      h.click('edit-record',{id:'record-0'});const form=h.elements.get('#event-form');form.elements.date.value='2025-12-31';form.elements.type.value='mixed';h.events['#event-form:submit']({preventDefault(){}});
+    }else h.click(kind==='plan-delete'?'delete-plan':'delete-record',{id:kind==='plan-delete'?'p':'record-0'});
+    const save=h.storage.setItem;h.storage.setItem=()=>{throw Error('full');};h.click('confirm-event-change');
+    assert.deepEqual(h.read(),before);assert.equal(h.elements.get('#dialog').open,true);
+    assert.match(h.elements.get('#event-change-feedback').textContent,/저장하지 못했습니다/);
+    assert.equal(h.elements.get('#confirm-event-change').disabled,false);
+    h.storage.setItem=save;h.click('confirm-event-change');const after=h.read();assert.notDeepEqual(after,before);
+    h.click('confirm-event-change');assert.deepEqual(h.read(),after);
+  }
+});
+
+test('Confirmations reject changed or removed targets and newly conflicting dates instead of overwriting them',()=>{
+  for(const kind of ['record-edit','record-delete','plan-delete']){
+    const h=harness(1,{savedState:{...fixture(1),plans:[{id:'p',date:'2026-11-01',type:'plasma'}]}});
+    if(kind==='record-edit'){
+      h.click('edit-record',{id:'record-0'});h.events['#event-form:submit']({preventDefault(){}});
+    }else h.click(kind==='plan-delete'?'delete-plan':'delete-record',{id:kind==='plan-delete'?'p':'record-0'});
+    h.run(kind==='plan-delete'?"state.plans[0].type='mixed';persist()":"state.records[0].type='platelet';persist()");
+    const changed=h.read();h.click('confirm-event-change');assert.deepEqual(h.read(),changed);assert.match(h.elements.get('#event-change-feedback').textContent,/바뀌었습니다/);
+  }
+  const h=harness(1);h.click('edit-record',{id:'record-0'});h.events['#event-form:submit']({preventDefault(){}});
+  h.run("state.plans.push({id:'conflict',date:'2026-10-01',type:'plasma'});persist()");
+  const changed=h.read();h.click('confirm-event-change');assert.deepEqual(h.read(),changed);assert.match(h.elements.get('#event-change-feedback').textContent,/같은 날짜/);
+});
+
+test('Total donation count uses all completed history, remains visible beside annual records, and follows confirmed mutations',()=>{
+  const h=harness(7,{savedState:{...fixture(7),plans:[{id:'future',date:'2027-01-01',type:'whole'}]}});
+  const count=()=>Number(h.html().match(/data-record-total>([\d,]+)</)?.[1].replaceAll(',',''));
+  assert.equal(count(),7);h.change('record-filter','whole');assert.equal(count(),7);h.change('record-page','1');assert.equal(count(),7);
+  h.click('delete-record',{id:'record-0'});assert.equal(count(),7);h.click('confirm-event-change');assert.equal(count(),6);
+  h.run('undoAction()');assert.equal(count(),7);assert.equal(h.relaunch('#records').html().match(/data-record-total>(\d+)</)[1],'7');
+  const empty=harness(0);assert.match(empty.html(),/data-record-total>0<\/strong>회/);
+  const saved=h.read();h.click('demo');h.click('records');h.click('delete-record',{id:h.run('state.records[0].id')});h.click('confirm-event-change');assert.deepEqual(h.read(),saved);
+});
 
 test('Rules submit previews changed values without a write, and cancelling preserves the draft',()=>{
   const h=harness(0,{hash:'#settings'}),before=JSON.stringify(h.read()),rules=engine.clone(engine.DEFAULT_RULES);rules.cap=2500;rules.waits.whole=60;
@@ -280,7 +360,7 @@ test('Missing or invalid legacy preferences never block today calculations or lo
 test('Failed record writes preserve history while the today header and balance remain available',()=>{
   const h=harness(2);h.click('dashboard');const saved=h.read();
   const write=h.storage.setItem;h.storage.setItem=()=>{throw Error('Storage full');};
-  h.click('delete-record',{id:'record-0'});assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');assert.deepEqual(h.read(),saved);
   assert.equal(h.run('anchorDate()'),'2026-10-18');assert.match(h.elements.get('#toast').innerHTML,/저장하지 못했습니다/);
   h.storage.setItem=write;h.setToday('2026-10-19');
   assert.equal(h.elements.get('#date-label').textContent,'2026. 10. 19. 월요일');
@@ -292,7 +372,7 @@ test('Demo, record editing and undo keep the today reference and preserve the re
   const h=harness(2,{savedState:initial});const saved=h.read();
   h.click('demo');assert.equal(h.run('anchorDate()'),'2026-10-18');assert.deepEqual(h.read(),saved);
   h.click('demo');assert.equal(h.run('anchorDate()'),'2026-10-18');
-  h.click('delete-record',{id:'record-0'});h.run('undoAction()');
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.run('undoAction()');
   assert.deepEqual(h.read(),saved);assert.equal(h.relaunch().run('anchorDate()'),'2026-10-18');
 });
 
@@ -301,7 +381,7 @@ test('Encrypted and legacy backups restore records while previous date preferenc
   const h=harness(2,{savedState:initial});h.click('export-backup');await h.password('valid-test-password');
   const encrypted=h.exports[0].text;
   assert.deepEqual(JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password')),initial);
-  h.click('delete-record',{id:'record-0'});
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');
   await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
   await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
   assert.deepEqual(h.read(),initial);assert.equal(h.relaunch().run('anchorDate()'),'2026-10-18');
@@ -347,7 +427,7 @@ test('201 records are reachable once across 41 pages of five; paging and filteri
 });
 
 test('Deleting the final page clamps navigation, undo restores data, and removed export controls stay absent',()=>{
-  const h=harness();h.change('record-page','40');h.click('delete-record',{id:'record-0'});
+  const h=harness();h.change('record-page','40');h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');
   assert.equal(h.run('recordPageIndex'),39);assert.equal(h.ids().length,5);
   assert.equal(h.read().records.length,200);assert.ok(!h.read().records.some(row=>row.id==='record-0'));
   h.run('undoAction()');assert.deepEqual(h.read(),h.initial);
@@ -377,7 +457,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.4.5/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.4.8/);
   assert.equal(h.requests.length,0);
 });
 
@@ -388,7 +468,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v4.4.5/);
+  assert.match(h.html(),/현재 v4.4.8/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -440,7 +520,7 @@ test('Each approval permits one refresh, repeat taps do not queue requests, and 
 
 
 test('Plan/record notices expire after exactly two seconds and discard the undo action',()=>{
-  const h=harness(1);h.click('delete-record',{id:'record-0'});
+  const h=harness(1);h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');
   const timer=h.timers.get(h.run('toastTimer'));assert.equal(timer.delay,2000);
   assert.equal(typeof h.run('undoAction'),'function');timer.fn();assert.equal(h.run('undoAction'),null);
   assert.equal(h.read().records.length,0);
@@ -511,7 +591,7 @@ test('Every start-page choice survives a cold launch, navigation and record edit
     assert.deepEqual({...h.read(),startPage:undefined},{...initial,startPage:undefined});
     assert.match(h.html(),new RegExp(`<option value="${page}" selected>`));
     h.click('dashboard');h.click('records');
-    h.click('delete-record',{id:'record-0'});h.run('undoAction()');
+    h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.run('undoAction()');
     const reopened=h.relaunch();assert.equal(reopened.run('page'),page);
     assert.deepEqual(reopened.read(),h.read());assert.equal(reopened.requests.length,0);
     assert.equal(h.relaunch('#settings').run('page'),'settings');
@@ -543,7 +623,7 @@ test('Last-screen navigation writes only on actual page changes; undo preserves 
   h.storage.setItem=(key,value)=>{writes++;write(key,value);};
   h.click('records');assert.equal(writes,1);
   h.click('records');h.run('render();refreshLocalDay()');assert.equal(writes,1);
-  h.click('delete-record',{id:'record-0'});h.click('planner');h.run('undoAction()');
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.click('planner');h.run('undoAction()');
   assert.equal(h.read().records.length,3);assert.equal(h.read().lastPage,'planner');
   assert.equal(h.relaunch().run('page'),'planner');
   h.run("location.hash='#records'");h.events['window:hashchange']();
@@ -617,11 +697,11 @@ test('Start-page preference crosses encrypted backup and restore; pending undo c
   const encrypted=h.exports[0].text;
   const exported=JSON.parse(await backupCrypto.decryptBackup(JSON.parse(encrypted),'valid-test-password'));
   assert.equal(exported.startPage,'planner');
-  h.change('start-page','records');h.click('delete-record',{id:'record-0'});
+  h.change('start-page','records');h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');
   await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
   await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
   assert.deepEqual(h.read(),exported);assert.equal(h.relaunch().run('page'),'planner');
-  h.click('delete-record',{id:'record-0'});h.click('settings');h.change('start-page','records');
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.click('settings');h.change('start-page','records');
   assert.equal(h.run('undoAction'),undefined);assert.equal(h.relaunch().run('page'),'records');
   assert.equal(h.read().records.length,2);assert.equal(h.requests.length,0);
 });
@@ -705,7 +785,7 @@ test('Disabled display settings survive relaunch, encrypted backup/restore and l
   await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
   await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
   assert.deepEqual(h.read(),saved);
-  h.click('delete-record',{id:'record-0'});h.run('undoAction()');assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.run('undoAction()');assert.deepEqual(h.read(),saved);
   reopened=h.relaunch();assert.equal(reopened.run('page'),'records');assert.deepEqual(reopened.read(),saved);
   assert.equal(h.requests.length+reopened.requests.length,0);
 });
@@ -725,7 +805,7 @@ test('Legacy display settings default on; invalid values and failed writes canno
   h.click('demo');assert.equal(h.run("displayEnabled('recordHighlight')"),false);
   h.click('settings');assert.match(h.html(),/data-display-option="recordHighlight"[^>]*disabled/);
   h.display('recordHighlight',true);h.click('demo');assert.deepEqual(h.read(),saved);
-  h.click('delete-record',{id:'record-0'});h.click('settings');h.display('balanceHighlight',false);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.click('settings');h.display('balanceHighlight',false);
   assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
   const reopened=h.relaunch();assert.deepEqual(reopened.read().displayOptions,{recordHighlight:false,balanceHighlight:false});
   assert.equal(h.requests.length,0);
@@ -785,7 +865,7 @@ test('Red Connect shortcut choices survive relaunch, encrypted backup restoratio
   await h.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
   await h.password('valid-test-password');h.elements.get('#confirm-restore').onclick();
   assert.deepEqual(h.read(),saved);assertHidden(h);
-  h.click('delete-record',{id:'record-0'});h.run('undoAction()');assert.deepEqual(h.read(),saved);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.run('undoAction()');assert.deepEqual(h.read(),saved);
   assertHidden(h.relaunch());assert.equal(h.requests.length+reopened.requests.length,0);
 });
 
@@ -812,7 +892,7 @@ test('Old backups default to both Red Connect shortcuts on and failed or demo se
     h.display(key,false);
   }
   h.click('demo');assert.deepEqual(h.read(),saved);
-  h.click('delete-record',{id:'record-0'});h.display('redConnectPlan',false);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');h.display('redConnectPlan',false);
   assert.equal(h.run('undoAction'),undefined);assert.equal(h.read().records.length,1);
   assert.deepEqual(h.relaunch().read().displayOptions,{redConnectCalendar:false,redConnectPlan:false});
   assert.equal(h.requests.length,0);
@@ -1133,7 +1213,7 @@ test('Compact four-type totals count all completed records, ignore plans and fil
   assert.deepEqual(counts(),[['whole',3],['plasma',3],['platelet',3],['mixed',3]]);
   assert.match(h.html(),/<th scope="col">혈소판<br>혈장<\/th>/);
   h.change('record-filter','mixed');assert.deepEqual(counts(),[['whole',3],['plasma',3],['platelet',3],['mixed',3]]);
-  h.click('delete-record',{id:'record-0'});assert.equal(counts()[0][1],2);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');assert.equal(counts()[0][1],2);
   h.run('undoAction()');assert.deepEqual(h.read(),before);assert.equal(counts()[0][1],3);
   assert.equal(h.requests.length,0);
   const empty=harness(0);assert.equal((empty.html().match(/<strong>0<\/strong>회/g)||[]).length,4);
@@ -1207,10 +1287,10 @@ test('Volunteer hours follow record creation, date/type edits, deletion, undo, e
   const h=harness(0);assert.deepEqual(volunteerHours(h),{total:0,year:0});
   const saveForm=(date,type)=>{const form=h.elements.get('#event-form');form.elements.date.value=date;form.elements.type.value=type;h.events['#event-form:submit']({preventDefault(){}});};
   h.click('add-record');saveForm('2026-10-18','plasma');assert.deepEqual(volunteerHours(h),{total:4,year:4});const id=h.read().records[0].id;
-  h.click('edit-record',{id});saveForm('2025-12-31','whole');assert.deepEqual(volunteerHours(h),{total:4,year:0});
-  h.click('delete-record',{id});assert.deepEqual(volunteerHours(h),{total:0,year:0});h.run('undoAction()');assert.deepEqual(volunteerHours(h),{total:4,year:0});
+  h.click('edit-record',{id});saveForm('2025-12-31','whole');h.click('confirm-event-change');assert.deepEqual(volunteerHours(h),{total:4,year:0});
+  h.click('delete-record',{id});h.click('confirm-event-change');assert.deepEqual(volunteerHours(h),{total:0,year:0});h.run('undoAction()');assert.deepEqual(volunteerHours(h),{total:4,year:0});
   const before=h.read();assert.equal(Object.hasOwn(before,'volunteerHours'),false);h.click('export-backup');await h.password('volunteer-backup');const encrypted=h.exports.at(-1).text;
-  h.click('delete-record',{id});await h.run(`restoreBackup({size:${encrypted.length},text:async()=>${JSON.stringify(encrypted)}})`);await h.password('volunteer-backup');h.elements.get('#confirm-restore').onclick();
+  h.click('delete-record',{id});h.click('confirm-event-change');await h.run(`restoreBackup({size:${encrypted.length},text:async()=>${JSON.stringify(encrypted)}})`);await h.password('volunteer-backup');h.elements.get('#confirm-restore').onclick();
   assert.deepEqual(volunteerHours(h),{total:4,year:0});assert.deepEqual(h.read(),before);const restarted=h.relaunch('#records');assert.deepEqual(volunteerHours(restarted),{total:4,year:0});assert.equal(h.requests.length+restarted.requests.length,0);
 });
 
@@ -1470,7 +1550,7 @@ test('Demo and screen-editor previews cannot overwrite real dashboard folds or t
   h.click('layout-cancel');assert.equal(h.elements.get('#dashboard-upcoming').open,false);
   h.click('demo');h.fold('upcoming',true);h.fold('recent',false);assert.deepEqual(h.read(),before);
   h.click('demo');assert.equal(h.elements.get('#dashboard-upcoming').open,false);assert.equal(h.elements.get('#dashboard-recent').open,true);
-  h.click('delete-record',{id:'record-0'});assert.equal(h.run('typeof undoAction'),'function');h.fold('recent',false);assert.equal(h.run('undoAction'),null);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');assert.equal(h.run('typeof undoAction'),'function');h.fold('recent',false);assert.equal(h.run('undoAction'),null);
   assert.equal(h.read().records.length,1);assert.equal(h.read().dashboardSections.recent,false);assert.equal(h.requests.length,0);
 });
 
@@ -1543,7 +1623,7 @@ test('Planner screen editing and demo previews preserve real folds through hide,
   const restarted=h.relaunch('#planner');assert.equal(restarted.elements.get('#long-term-plans').open,true);assert.equal(restarted.elements.get('#restriction-periods').open,true);
   const saved=h.read();h.click('demo');h.click('planner');h.fold('long-term-plans',false);h.fold('restriction-periods',false);assert.deepEqual(h.read(),saved);
   h.click('demo');h.click('planner');assert.equal(h.elements.get('#long-term-plans').open,true);assert.equal(h.elements.get('#restriction-periods').open,true);
-  h.click('delete-record',{id:'record-0'});assert.equal(h.run('typeof undoAction'),'function');h.fold('long-term-plans',false);assert.equal(h.run('undoAction'),null);
+  h.click('delete-record',{id:'record-0'});h.click('confirm-event-change');assert.equal(h.run('typeof undoAction'),'function');h.fold('long-term-plans',false);assert.equal(h.run('undoAction'),null);
   assert.equal(h.read().records.length,1);assert.equal(h.read().plannerSections.plans,false);assert.equal(h.requests.length,0);
 });
 
@@ -1738,8 +1818,8 @@ test('Statistics handle back, reopening, other dialogs, midnight and details/sum
 
 test('Statistics follow record edits, delete/undo and restored history without retaining stale aggregates',()=>{
   const h=harness(0,{savedState:statisticsFixture()}),before=h.read();h.click('record-statistics');assert.deepEqual(statisticsTotals(h),{count:4,hours:16});h.click('close-dialog');
-  h.click('delete-record',{id:'statistics-7'});h.click('record-statistics');assert.deepEqual(statisticsTotals(h),{count:3,hours:12});h.run('undoAction()');assert.deepEqual(statisticsTotals(h),{count:4,hours:16});h.click('close-dialog');
-  h.click('edit-record',{id:'statistics-7'});const form=h.elements.get('#event-form');form.elements.date.value='2025-12-31';form.elements.type.value='whole';h.events['#event-form:submit']({preventDefault(){}});
+  h.click('delete-record',{id:'statistics-7'});h.click('confirm-event-change');h.click('record-statistics');assert.deepEqual(statisticsTotals(h),{count:3,hours:12});h.run('undoAction()');assert.deepEqual(statisticsTotals(h),{count:4,hours:16});h.click('close-dialog');
+  h.click('edit-record',{id:'statistics-7'});const form=h.elements.get('#event-form');form.elements.date.value='2025-12-31';form.elements.type.value='whole';h.events['#event-form:submit']({preventDefault(){}});h.click('confirm-event-change');
   h.click('record-statistics');assert.deepEqual(statisticsTotals(h),{count:3,hours:12});changeStatisticsYear(h,'2025');assert.deepEqual(statisticsTotals(h),{count:1,hours:4});h.click('close-dialog');
   h.run(`confirmBackupRestore(validateState(${JSON.stringify(before)}))`);h.elements.get('#confirm-restore').onclick();h.click('records');h.click('record-statistics');assert.deepEqual(statisticsTotals(h),{count:4,hours:16});
   const restarted=h.relaunch('#records');restarted.click('record-statistics');assert.deepEqual(statisticsTotals(restarted),{count:4,hours:16});assert.deepEqual(restarted.read(),before);assert.equal(h.requests.length+restarted.requests.length,0);
