@@ -395,12 +395,6 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .date-popup-footer button{min-height:50px;padding:11px 8px;border-radius:13px;font-size:15px;line-height:1.45;word-break:keep-all}
 .date-popup-footer .secondary{background:#f2f4ed;border-color:#e0e6dc;color:#627469}
 .date-popup-footer .primary:disabled{background:#c5d3c7;color:#fff;opacity:1}
-.red-connect-shortcut{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:12px;padding:12px;background:#f5f8f3;border:1px solid #e0e7dc;border-radius:12px;min-width:0}
-.red-connect-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;max-width:100%;padding:10px 12px;border:1px solid #b4cabc;border-radius:10px;background:#fff;color:var(--green);font-size:13px;font-weight:700;line-height:1.5;word-break:keep-all}
-.red-connect-button svg{flex-shrink:0}
-.date-popup-booking{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;text-align:center}
-.date-popup-booking .red-connect-button{width:100%}
-@media(max-width:479px){.plan-row .red-connect-button{width:100%}}
 @media(max-width:359px){
   dialog.calendar-date-dialog{padding:22px 15px 16px}
   .date-popup-head{padding-left:14px;padding-right:14px}
@@ -588,7 +582,7 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 :is([data-theme=blood],[data-theme=pastel]) .display-toggle input[type=checkbox]{background:#d8d6d4;border-color:#a8a1a3}
 :is([data-theme=blood],[data-theme=pastel]) .display-toggle input[type=checkbox]:checked{background:var(--green);border-color:var(--green)}
 :is([data-theme=blood],[data-theme=pastel]) :is(footer,.eyebrow,.side-bottom,.side-bottom small,.annual-bar small,.certificate-row small,.date-popup-year,.date-popup-note,.date-popup-close,.date-popup-totals>span,.layout-grip){color:var(--muted)}
-:is([data-theme=blood],[data-theme=pastel]) :is(.metric,.plan-bulk-toolbar,.quick-plan-summary,.date-popup-totals,.red-connect-shortcut,.license-text,.layout-toolbar,.layout-hidden-item,.layout-editing>.screen-widget){background:var(--surface);border-color:var(--line)}
+:is([data-theme=blood],[data-theme=pastel]) :is(.metric,.plan-bulk-toolbar,.quick-plan-summary,.date-popup-totals,.license-text,.layout-toolbar,.layout-hidden-item,.layout-editing>.screen-widget){background:var(--surface);border-color:var(--line)}
 :is([data-theme=blood],[data-theme=pastel]) :is(.chip,.certificate-summary>span,.notice,.layout-edit-note,.form-feedback,.demo-banner,.plan-row.is-selected,.empty .symbol){background:var(--green-soft);color:var(--green);border-color:var(--line)}
 :is([data-theme=blood],[data-theme=pastel]) :is(.notice.warning,.certificate-note,.plan-review-label,.plan-row.needs-review){background:var(--warning);color:var(--warning-ink)}
 :is([data-theme=blood],[data-theme=pastel]) :is(.notice.error,.form-feedback.error,.date-popup-warning){background:var(--error);color:var(--error-ink)}
@@ -608,8 +602,7 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 :is([data-theme=blood],[data-theme=pastel]) .date-popup-choice.restricted .date-popup-check{background:var(--cannot-ink)}
 :is([data-theme=blood],[data-theme=pastel]) .date-popup-choice.neutral .date-popup-check{background:var(--past-ink)}
 :is([data-theme=blood],[data-theme=pastel]) .date-popup-footer .primary:disabled{background:var(--surface);color:var(--muted);opacity:1}
-:is([data-theme=blood],[data-theme=pastel]) :is(.date-popup-plan,.red-connect-button){border-color:var(--line)}
-:is([data-theme=blood],[data-theme=pastel]) .red-connect-button{background:var(--paper)}
+:is([data-theme=blood],[data-theme=pastel]) :is(.date-popup-plan){border-color:var(--line)}
 :is([data-theme=blood],[data-theme=pastel]) :is(.restriction-entry,.restriction-period){background:var(--restriction);border-color:var(--restriction-edge);color:var(--restriction-ink)}
 :is([data-theme=blood],[data-theme=pastel]) .layout-placeholder{background:var(--green-soft);border-color:var(--green)}
 :is([data-theme=blood],[data-theme=pastel]) .layout-dragging{outline-color:var(--green)}
@@ -682,8 +675,11 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .donation-service-option span{min-width:0}.donation-service-option strong{display:block;font-size:14px}.donation-service-option small{display:block;font-size:11px;font-weight:500;margin-top:4px}
 .donation-service-option:focus-within{outline:2px solid var(--green);outline-offset:3px}.donation-service-card>.settings-note{margin-top:12px}
 .topbar>.today-tools{display:flex;align-items:center;gap:12px;min-width:0}
-.questionnaire-link{display:inline-flex;flex:0 0 44px;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:5px 8px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--green);font-size:12px;font-weight:750;line-height:1.2;text-align:center;text-decoration:none}
-.questionnaire-link:active{background:var(--green-soft)}
+/* Read the date and use the three services on the same row. */
+.header-shortcuts{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.header-shortcut{display:inline-flex;flex:0 0 44px;align-items:center;justify-content:center;width:44px;height:44px;padding:3px 2px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--green);font-size:12px;font-weight:750;line-height:1.18;text-align:center;text-decoration:none;white-space:nowrap}
+.header-shortcut:active{background:var(--green-soft)}
+.vms-shortcut{font-size:9px}
 @media(max-width:639px){.donation-service-options{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:359px){.donation-counts th{font-size:11px}.donation-counts strong{font-size:16px}.topbar>.today-tools{gap:8px}}
 
@@ -713,11 +709,9 @@ dialog.calendar-date-dialog::backdrop{background:#142c2859;backdrop-filter:none}
 .first-run-notice h3{font-size:15px;margin-bottom:5px}.first-run-notice p+p{margin-top:7px}
 @media(max-width:1023px){
  .topbar{min-height:72px;padding-top:10px;padding-bottom:10px}
- .topbar>.today-tools{padding-right:52px;flex:1;min-width:0;gap:3px}
- .topbar>.header-actions{width:0;min-width:0;gap:0}
- .header-actions .questionnaire-link{position:absolute;top:68px;right:24px}
+ .topbar>.today-tools{flex:1;min-width:0;gap:3px}
+ .topbar>.header-actions{gap:0}
 }
-@media(max-width:719px){.header-actions .questionnaire-link{top:66px;right:max(16px,env(safe-area-inset-right,0px))}}
 @media(max-width:399px){.summary-title{font-size:14px}.summary-title .badge{margin-left:3px;padding:2px 6px}.plan-list>summary,.restriction-list>summary,.dashboard-list>summary{gap:5px}.date-occasion{font-size:11px}}
 
 /* Completed donation totals only; keep the VMS link smaller with a full touch target. */
@@ -821,3 +815,29 @@ dialog.calendar-picker-dialog{width:min(430px,calc(100% - 28px));padding:22px;ov
 .calendar-picker-dialog .card-foot button{min-height:46px}
 .calendar-picker-dialog .form-feedback{margin-top:8px}
 @media(max-width:360px){dialog.calendar-picker-dialog{padding:18px 14px}.calendar-picker-modes button{font-size:12px}.calendar-period{gap:0}.calendar-period button{gap:2px;padding:0 2px}}
+
+/* The reference emblems fit into the available right-hand space without a card overlay. */
+.balance-reading.has-milestone{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;margin-top:10px}
+.balance-reading.has-milestone .balance-number{margin-top:0;min-width:0;overflow-wrap:anywhere}
+.dashboard-milestone{position:relative;z-index:1;flex:none;display:grid;place-items:center;width:clamp(75px,24vw,134px);aspect-ratio:1;padding:0;border-radius:16px;transition:none}
+.dashboard-milestone:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.milestone-art{display:block;width:100%;aspect-ratio:1;background:url("./milestones.webp") 0 0 / 300% 200% no-repeat;pointer-events:none}
+.milestone-art[data-milestone-art="gold"]{background-position:50% 0}
+.milestone-art[data-milestone-art="honor"]{background-position:100% 0}
+.milestone-art[data-milestone-art="grand"]{background-position:0 100%}
+.milestone-art[data-milestone-art="highest"]{background-position:50% 100%}
+.milestone-art[data-milestone-art="house"]{background-position:100% 100%}
+.milestone-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.milestone-choices button{min-width:0;min-height:44px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);word-break:keep-all;overflow-wrap:anywhere}
+.milestone-choices [aria-pressed=true]{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green);background:var(--green-soft)}
+.milestone-auto{grid-column:1/-1;padding:8px;font-weight:750;font-size:13px}
+.milestone-choice{display:flex;flex-direction:column;align-items:center;padding:7px 4px 8px;line-height:1.4}
+.milestone-choice .milestone-art{width:min(100%,93px)}
+.milestone-choice strong{font-size:12px}
+.milestone-choice small{margin-top:3px;color:var(--ink);font-size:10px}
+.milestone-note{margin-top:12px}
+#milestone-feedback{margin-top:8px}
+@media(max-width:460px){
+  .topbar #date-label{font-size:clamp(12px,3.75vw,17px);letter-spacing:-.3px}
+  .balance-reading.has-milestone .balance-number{font-size:clamp(36px,11vw,52px)}
+}

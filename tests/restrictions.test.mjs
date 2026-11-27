@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_RULES,TYPES,clone,assess,earliest,simulate,availabilityForDate,inspectPlan,proposeMonthly,stats,releaseDate,validateRestrictions,normalizeRestrictionReason,restrictionReasonUnits,activeRestrictions,RESTRICTION_MAX_DAYS} from '../assets/engine.mjs';
+import {DEFAULT_RULES,TYPES,clone,assess,earliest,simulate,availabilityForDate,inspectPlan,stats,releaseDate,validateRestrictions,normalizeRestrictionReason,restrictionReasonUnits,activeRestrictions,RESTRICTION_MAX_DAYS} from '../assets/engine.mjs';
 const ranges=[{id:'pause',start:'2026-10-23',end:'2026-11-05',reason:'약 복용'}];
 const event=(date,type='plasma')=>({id:date,date,type});
 
@@ -44,13 +44,11 @@ test('Overlap, adjacency, leap day and the earliest search limit are handled wit
   assert.equal(activeRestrictions('2028-02-29',leap).length,1);
   assert.equal(earliest('mixed','2028-02-28',[],[],DEFAULT_RULES,10,leap),'2028-03-02');
 });
-test('Existing plans are flagged without deletion; generated monthly drafts skip restricted days',()=>{
+test('Existing plans are flagged without deletion',()=>{
   const plans=[event('2026-10-30')],before=clone(plans);
   assert.equal(inspectPlan([],plans,DEFAULT_RULES,ranges)[0].ok,false);
   assert.deepEqual(plans,before);
-  const draft=proposeMonthly([],[],'2026-10-23',3,'plasma',DEFAULT_RULES,ranges);
-  assert.deepEqual(draft.skipped,['2026-10']);assert.equal(draft.draft.length,2);
-  for(const e of draft.draft)assert.equal(activeRestrictions(e.date,ranges).length,0);
+
 });
 test('Optional reasons obey Korean 20 / other text 40 weighted bounds and reject emoji or controls',()=>{
   for(const text of ['', '약 복용', '가'.repeat(20),'a'.repeat(40),'가'.repeat(10)+'1'.repeat(20),`약 'A' (14)?! “휴식”`])assert.equal(normalizeRestrictionReason(text),text);

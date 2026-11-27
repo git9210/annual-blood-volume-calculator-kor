@@ -176,11 +176,11 @@ test('Swipes respect year/month boundaries and never swallow keyboard date activ
   h.run("moveCalendar('2199-12-01');render()");swipe(280,80);assert.equal(h.run('calendarMonth'),'2199-12');
   assert.equal(h.calendarEvent('click',{detail:0,date:'2199-12-20'}).stopped,false);assert.equal(h.open(),true);
 });
-test('Requested captions are removed, the Red Connect action remains, and zero restrictions stay visible under plans',()=>{
+test('Old planner booking and draft controls are removed; zero restrictions stay visible under plans',()=>{
   const h=harness({plans:[{id:'next',date:'2026-11-06',type:'plasma'}]}),before=h.read();
   assert.doesNotMatch(h.app(),/class="calendar-range"|가장 가까운 예정 헌혈|예약은 레드커넥트에서 진행하세요/);
   assert.match(h.app(),/aria-label="네 종류의 헌혈 가능 여부가 표시된 월간 달력"/);
-  assert.match(h.app(),/data-action="plan-red-connect" data-id="next"/);
+  assert.doesNotMatch(h.app(),/plan-red-connect|auto-plan|월별 초안/);
   assert.match(h.app(),/<summary><span class="summary-title">헌혈 제한 기간 <span class="badge">0건<\/span>/);
   assert.match(h.app(),/등록된 헌혈 제한 기간이 없습니다/);
   assert.ok(h.app().indexOf('나의 장기 계획')<h.app().indexOf('restriction-list'));
@@ -389,52 +389,25 @@ function redConnectBridge(h){
   h.run('window.redConnectRequests=[];window.BloodNoteAndroid={requestDonationService(...args){window.redConnectRequests.push(args);}}');
   return ()=>JSON.parse(h.run('JSON.stringify(window.redConnectRequests)'));
 }
-test('Red Connect popup shortcut requests native consent only on tap, sends no data and preserves an unsaved choice',()=>{
+test('Date details never offer booking and keep an unsaved plan when stale booking actions are invoked',()=>{
   const h=harness(),requests=redConnectBridge(h),before=h.read(),writes=h.writes();
   h.click('day',{date:'2027-02-19'});h.click('day-type',{type:'plasma'});
-  assert.match(h.html(),/data-action="day-red-connect"/);assert.match(h.html(),/선택 완료.*저장/);
-  assert.deepEqual(requests(),[]);h.click('day-red-connect');
-  assert.deepEqual(requests(),[['redconnect']]);assert.equal(h.open(),true);
+  assert.doesNotMatch(h.html(),/day-red-connect|헌혈 예약하기/);
   assert.match(h.html(),/data-type="plasma" aria-pressed="true"/);
-  assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);assert.equal(h.requests(),0);
+  h.click('day-red-connect');h.click('plan-red-connect',{id:'stale'});h.click('header-reservation');
+  assert.deepEqual(requests(),[]);assert.deepEqual(h.read(),before);assert.equal(h.writes(),writes);
   h.click('day-confirm');assert.equal(h.read().plans.length,1);
-  h.click('day',{date:'2027-02-19'});h.click('day-red-connect');
-  assert.deepEqual(requests(),[['redconnect'],['redconnect']]);assert.equal(h.read().plans.length,1);
 });
-test('Exactly the earliest today-or-future plan has a shortcut, and deletion or date rollover moves it',()=>{
-  const h=harness({plans:[{id:'later',date:'2027-02-19',type:'whole'},{id:'past',date:'2026-10-01',type:'mixed'},{id:'next',date:'2026-11-06',type:'plasma'},{id:'due',date:'2026-10-22',type:'platelet'}]});
-  const requests=redConnectBridge(h),ids=()=>[...h.app().matchAll(/data-action="plan-red-connect" data-id="([^"]+)"/g)].map(m=>m[1]);
-  assert.deepEqual(ids(),['due']);assert.deepEqual(requests(),[]);
-  h.click('plan-red-connect',{id:'later'});h.click('plan-red-connect',{id:'past'});assert.deepEqual(requests(),[]);
-  const before=h.read();h.click('plan-red-connect',{id:'due'});assert.deepEqual(requests(),[['redconnect']]);assert.deepEqual(h.read(),before);
-  h.click('delete-plan',{id:'due'});h.click('confirm-event-change');assert.deepEqual(ids(),['next']);
-  h.click('plan-red-connect',{id:'due'});assert.equal(requests().length,1);
-  h.today('2026-11-07',true);assert.deepEqual(ids(),['later']);
-  h.click('plan-red-connect',{id:'next'});assert.equal(requests().length,1);
-  h.click('delete-plan',{id:'later'});h.click('confirm-event-change');assert.deepEqual(ids(),[]);assert.equal(h.requests(),0);
-});
-test('Past dates, completed donations and closed or stale date popups cannot open Red Connect',()=>{
-  const h=harness({records:[{id:'done',date:'2026-10-22',type:'plasma'}]}),requests=redConnectBridge(h),before=h.read();
-  for(const date of ['2026-10-21','2026-10-22']){
-    h.click('day',{date});assert.doesNotMatch(h.html(),/data-action="day-red-connect"/);
-    h.click('day-red-connect');h.click('close-dialog');
-  }
-  h.click('day',{date:'2026-10-23'});h.click('close-dialog');h.click('day-red-connect');
-  h.click('day',{date:'2026-10-23'});h.today('2026-10-24');h.click('day-red-connect');
-  assert.doesNotMatch(h.html(),/data-action="day-red-connect"/);assert.deepEqual(requests(),[]);
-  h.click('day',{date:'2027-02-19'});h.run("state.plans.push({id:'changed',date:'2027-02-18',type:'plasma'})");h.click('day-red-connect');
-  assert.match(h.html(),/기록이나 계획이 바뀌었습니다/);assert.deepEqual(requests(),[]);
-  assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
-});
-test('Unavailable or failing bridge and demo mode keep all data and never fall back to a website',()=>{
-  const h=harness({plans:[{id:'upcoming',date:'2026-11-06',type:'plasma'}]}),before=h.read();
-  h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/Android 앱/);
+test('Header reservation launches only through the Android consent bridge and never changes saved data',()=>{
+  const h=harness(),before=h.read();
+  h.click('header-reservation');assert.match(h.nodes.get('#toast').innerHTML,/Android 앱/);
   h.run("window.BloodNoteAndroid={requestDonationService(){throw Error('unavailable')}}");
-  h.click('plan-red-connect',{id:'upcoming'});assert.match(h.nodes.get('#toast').innerHTML,/열지 못했습니다/);
-  const requests=redConnectBridge(h);h.run('realState=clone(state);demoMode=true;render()');
-  assert.match(h.app(),/data-action="plan-red-connect" data-id="upcoming" disabled/);
-  h.click('plan-red-connect',{id:'upcoming'});h.click('day',{date:'2026-11-06'});h.click('day-red-connect');
-  assert.deepEqual(requests(),[]);assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
+  h.click('header-reservation');assert.match(h.nodes.get('#toast').innerHTML,/열지 못했습니다/);
+  const requests=redConnectBridge(h);h.click('header-reservation');
+  assert.deepEqual(requests(),[['redconnect']]);
+  h.run('realState=clone(state);demoMode=true;render()');
+  h.click('header-reservation');
+  assert.deepEqual(requests(),[['redconnect']]);assert.deepEqual(h.read(),before);assert.equal(h.requests(),0);
 });
 
 test('Only actual donations get completed-day emphasis; past or due plans do not, and undo restores it',()=>{

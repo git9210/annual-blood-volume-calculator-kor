@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
     private static final Set<String> ASSETS = new HashSet<>(Arrays.asList(
         "index.html", "app.mjs", "engine.mjs", "calendar-view.mjs", "holidays.mjs",
         "holiday-snapshot.mjs", "licenses.mjs", "certificate-import.mjs", "secure-storage.mjs", "backup-crypto.mjs",
-        "screen-layout.mjs", "layout-drag.mjs", "style.css", "brand-blood.png", "brand-pastel.png", "brand-initial.png",
+        "screen-layout.mjs", "layout-drag.mjs", "style.css", "brand-blood.webp", "brand-pastel.webp", "brand-initial.webp", "milestones.webp",
         "holiday-data-license.txt"
     ));
     private static final int IMPORT_FILE = 101, EXPORT_FILE = 102;
@@ -217,6 +217,7 @@ public final class MainActivity extends Activity {
         if (name.endsWith(".css")) return "text/css";
         if (name.endsWith(".svg")) return "image/svg+xml";
         if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".webp")) return "image/webp";
         return "text/plain";
     }
 

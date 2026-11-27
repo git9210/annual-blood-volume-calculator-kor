@@ -18,12 +18,14 @@ const server=createServer(async(req,res)=>{
     let body=await readFile(path);
     if(name==='app.mjs'){
       // Count calls without changing the calculation engine or shipping test hooks.
-      body=body.toString().replace('assess,simulate,earliest','assess,simulate as originalSimulate,earliest')
-        .replace("const ONBOARDING_KEY=","const simulate=(...args)=>{window.__qa.calculations++;return originalSimulate(...args);};\nconst ONBOARDING_KEY=")
+      const imports='assess,simulate,simulateChoices,earliestWithoutPlans';
+      assert.ok(body.includes(imports),'engine imports changed; verify picker test instrumentation');
+      body=body.toString().replace(imports,'assess,simulate,simulateChoices as originalChoices,earliestWithoutPlans')
+        .replace("const ONBOARDING_KEY=","const simulateChoices=(...args)=>{window.__qa.calculations++;return originalChoices(...args);};\nconst ONBOARDING_KEY=")
         .replace('function render(){','function render(){window.__qa.renders++;')
         +'\nwindow.__pickerState=()=>({selected,calendarMonth,picker:calendarPicker?{...calendarPicker}:null,state:clone(state)});';
     }
-    res.writeHead(200,{'Content-Type':({'.html':'text/html','.mjs':'application/javascript','.css':'text/css','.png':'image/png'})[extname(path)]||'text/plain'});res.end(body);
+    res.writeHead(200,{'Content-Type':({'.html':'text/html','.mjs':'application/javascript','.css':'text/css','.png':'image/png','.webp':'image/webp'})[extname(path)]||'text/plain'});res.end(body);
   }catch{res.writeHead(404);res.end();}
 });
 await new Promise(done=>server.listen(0,'127.0.0.1',done));

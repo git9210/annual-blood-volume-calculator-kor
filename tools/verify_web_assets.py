@@ -17,7 +17,7 @@ import zipfile
 
 ORIGIN = "https://appassets.androidplatform.net"
 MIMES = {".html": "text/html", ".mjs": "text/javascript", ".css": "text/css",
-         ".svg": "image/svg+xml", ".txt": "text/plain", ".png": "image/png"}
+         ".svg": "image/svg+xml", ".txt": "text/plain", ".png": "image/png", ".webp": "image/webp"}
 IMPORTS = re.compile(
     r'''^\s*(?:import\s+(?:[^;]*?\bfrom\s*)?|export\s+(?:\*|\{[^}]*\})\s+from\s*)["']([^"']+)["']''',
     re.MULTILINE)

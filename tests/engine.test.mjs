@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {DEFAULT_RULES,clone,validDate,addDays,yearStart,stats,assess,simulate,earliest,releaseDate,inspectPlan,parseLines,proposeMonthly,weekday} from '../assets/engine.mjs';
+import {DEFAULT_RULES,clone,validDate,addDays,yearStart,stats,assess,simulate,earliest,releaseDate,inspectPlan,parseLines,weekday} from '../assets/engine.mjs';
 const event=(date,type='whole',id=date)=>({id,date,type});
 const codes=r=>r.issues.map(i=>i.code);
 
@@ -125,17 +125,6 @@ test('일괄 가져오기에서 날짜·종류 추출 및 잘못된 날짜 검�
   assert.equal(parsed.rows.length,3);assert.deepEqual(parsed.rows.map(r=>r.type),['whole','mixed','plasma']);
   assert.equal(parsed.rows[0].date,'2026-01-05');assert.equal(parsed.errors.length,1);
 });
-test('24개월 초안의 모든 새 일정은 간격·횟수·이동연간한도를 지킴',()=>{
-  const records=[event('2026-10-08','mixed')],plans=[event('2026-12-28')];
-  const result=proposeMonthly(records,plans,'2026-10-17',24,'whole');
-  assert.ok(result.draft.length>10);
-  assert.ok(result.draft.every(e=>weekday(e.date)>0&&weekday(e.date)<6));
-  assert.equal(new Set(result.draft.map(e=>e.date.slice(0,7))).size,result.draft.length);
-  assert.ok(inspectPlan(records,[...plans,...result.draft]).every(r=>r.ok));
-  assert.equal(result.draft.some(e=>e.date.startsWith('2026-12')),false);
-  assert.equal(result.draft.some(e=>e.date.startsWith('2026-10')),false);
-});
-
 test('Unordered histories retain annual-boundary totals, exclude future entries and select the latest prior donation without mutation',()=>{
   const history=[event('2026-03-01','whole','future'),event('2025-02-28','mixed','boundary'),event('2025-02-27','whole','expired'),
     event('2026-02-20','whole','latest'),event('2025-03-01','plasma','inside'),event('2026-02-28','platelet','same-day')];

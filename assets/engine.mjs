@@ -81,47 +81,121 @@ export function activeRestrictions(date,restrictions=[]){return restrictions.fil
 export function weekday(s){return new Date(s+'T00:00:00Z').getUTCDay();}
 export function amount(e,rules=DEFAULT_RULES){return rules.volumes[e.type];}
 export function inWindow(e,date,rules=DEFAULT_RULES){const lower=yearStart(date);return e.date<=date&&(rules.boundary==='include'?e.date>=lower:e.date>lower);}
-export function stats(events,date,rules=DEFAULT_RULES){const lower=yearStart(date),include=rules.boundary==='include';const entries=events.filter(e=>e.date<=date&&(include?e.date>=lower:e.date>lower));const used=entries.reduce((n,e)=>n+amount(e,rules),0);return {entries,used,remaining:rules.cap-used,whole:entries.filter(e=>e.type==='whole').length,components:entries.filter(e=>e.type!=='whole').length,start:include?lower:addDays(lower,1),end:date};}
-export function assess(event,others,rules=DEFAULT_RULES,restrictions=[]){
-  let previous;for(const other of others)if(other.date<event.date&&(!previous||other.date>previous.date))previous=other;
-  const recent=stats(others,event.date,rules),issues=[];
-  for(const item of activeRestrictions(event.date,restrictions))issues.push({code:'manual-restriction',text:`직접 등록한 헌혈 제한 · ${item.start} ~ ${item.end}${item.reason?' · '+item.reason:''}`});
-  if(others.some(e=>e.date===event.date))issues.push({code:'duplicate',text:'같은 날짜에 다른 기록 또는 계획이 있습니다.'});
-  if(previous){const next=addDays(previous.date,rules.waits[previous.type]);if(event.date<next)issues.push({code:'interval',text:`${previous.date} ${TYPES[previous.type].label} 이후 ${rules.waits[previous.type]}일 간격 필요 · ${next}부터`});}
-  const projected=recent.used+amount(event,rules);
-  if(projected>rules.cap)issues.push({code:'volume',text:`연간 계산량 ${projected.toLocaleString()}mL · 한도보다 ${(projected-rules.cap).toLocaleString()}mL 초과`});
-  if(event.type==='whole'&&recent.whole+1>rules.wholeLimit)issues.push({code:'whole-count',text:`직전 1년 전혈 ${recent.whole+1}회 · ${rules.wholeLimit}회 한도 초과`});
-  if(['platelet','mixed'].includes(event.type)&&recent.components+1>rules.componentLimit)issues.push({code:'component-count',text:`직전 1년 성분헌혈 ${recent.components+1}회 · ${TYPES[event.type].label} ${rules.componentLimit}회 조건 초과`});
-  return {ok:issues.length===0,issues,used:recent.used,projected,remaining:rules.cap-projected,previous};
+function timelineFacts(events,date,rules,entries,excludeId){
+  const lower=yearStart(date),include=rules.boundary==='include';
+  let used=0,whole=0,components=0,previous,duplicate=false;
+  for(const e of events){
+    if(e.date>date||(excludeId!==undefined&&e.id===excludeId))continue;
+    // An earlier donation outside the annual window can still impose a custom wait.
+    if(e.date===date)duplicate=true;
+    else if(!previous||e.date>previous.date)previous=e;
+    if(e.date<lower||(!include&&e.date===lower))continue;
+    used+=amount(e,rules);
+    if(e.type==='whole')whole++;else components++;
+    if(entries)entries.push(e);
+  }
+  return {used,whole,components,previous,duplicate,lower,include};
 }
-export function inspectPlan(records,plans,rules=DEFAULT_RULES,restrictions=[]){const all=[...records,...plans];return [...plans].sort((a,b)=>a.date.localeCompare(b.date)).map(event=>({event,...assess(event,all.filter(e=>e.id!==event.id),rules,restrictions)}));}
-export function simulate(event,records,plans,rules=DEFAULT_RULES,restrictions=[]){
-  const baseline=[...records,...plans.filter(e=>e.id!==event.id)];
-  const own=assess(event,baseline,rules,restrictions),conflicts=[];
-  if(own.ok){
-    const waitEnd=addDays(event.date,rules.waits[event.type]);
-    for(const later of plans.filter(e=>e.id!==event.id&&e.date>event.date)){
-      // Once both effects expire, this candidate cannot add an annual amount,
-      // count or waiting-period issue. Keep custom waits and leap boundaries.
-      if(later.date>=waitEnd&&!inWindow(event,later.date,rules))continue;
-      const other=baseline.filter(e=>e.id!==later.id),before=assess(later,other,rules,restrictions),after=assess(later,[...other,event],rules,restrictions);
-      const added=after.issues.filter(i=>!before.issues.some(b=>b.code===i.code&&b.text===i.text));
-      if(added.length)conflicts.push({event:later,issues:added});
+export function stats(events,date,rules=DEFAULT_RULES){
+  const entries=[],{used,whole,components,lower,include}=timelineFacts(events,date,rules,entries);
+  return {entries,used,remaining:rules.cap-used,whole,components,start:include?lower:addDays(lower,1),end:date};
+}
+export function usedInWindow(events,date,rules=DEFAULT_RULES){return timelineFacts(events,date,rules).used;}
+function waitIssue(previous,date,rules){
+  if(!previous)return undefined;
+  const wait=rules.waits[previous.type],next=addDays(previous.date,wait);
+  return date<next?{code:'interval',text:`${previous.date} ${TYPES[previous.type].label} 이후 ${wait}일 간격 필요 · ${next}부터`}:undefined;
+}
+function assessmentFacts(events,date,rules,restrictions,excludeId){
+  const facts=timelineFacts(events,date,rules,undefined,excludeId),common=[];
+  for(const item of restrictions)if(item.start<=date&&date<=item.end)common.push({code:'manual-restriction',text:`직접 등록한 헌혈 제한 · ${item.start} ~ ${item.end}${item.reason?' · '+item.reason:''}`});
+  if(facts.duplicate)common.push({code:'duplicate',text:'같은 날짜에 다른 기록 또는 계획이 있습니다.'});
+  facts.common=common;facts.wait=waitIssue(facts.previous,date,rules);
+  return facts;
+}
+const VOLUME_LIMIT=1,WHOLE_LIMIT=2,COMPONENT_LIMIT=4;
+function limitFlags(type,recent,rules,projected){
+  return (projected>rules.cap?VOLUME_LIMIT:0)
+    | (type==='whole'&&recent.whole>=rules.wholeLimit?WHOLE_LIMIT:0)
+    | ((type==='platelet'||type==='mixed')&&recent.components>=rules.componentLimit?COMPONENT_LIMIT:0);
+}
+function assessType(type,recent,rules){
+  const issues=recent.common.slice();
+  if(recent.wait)issues.push(recent.wait);
+  const projected=recent.used+rules.volumes[type],limits=limitFlags(type,recent,rules,projected);
+  if(limits&VOLUME_LIMIT)issues.push({code:'volume',text:`연간 계산량 ${projected.toLocaleString()}mL · 한도보다 ${(projected-rules.cap).toLocaleString()}mL 초과`});
+  if(limits&WHOLE_LIMIT)issues.push({code:'whole-count',text:`직전 1년 전혈 ${recent.whole+1}회 · ${rules.wholeLimit}회 한도 초과`});
+  if(limits&COMPONENT_LIMIT)issues.push({code:'component-count',text:`직전 1년 성분헌혈 ${recent.components+1}회 · ${TYPES[type].label} ${rules.componentLimit}회 조건 초과`});
+  return {ok:issues.length===0,issues,used:recent.used,projected,remaining:rules.cap-projected,previous:recent.previous};
+}
+export function assess(event,others,rules=DEFAULT_RULES,restrictions=[]){return assessType(event.type,assessmentFacts(others,event.date,rules,restrictions),rules);}
+export function inspectPlan(records,plans,rules=DEFAULT_RULES,restrictions=[]){
+  const all=[...records,...plans];
+  return [...plans].sort((a,b)=>a.date.localeCompare(b.date)).map(event=>({event,...assessType(event.type,assessmentFacts(all,event.date,rules,restrictions,event.id),rules)}));
+}
+const typeKeys=Object.keys(TYPES);
+function simulateTypes(date,id,types,records,plans,rules,restrictions){
+  let baseline=records;
+  if(plans.length){baseline=records.slice();for(const plan of plans)if(plan.id!==id)baseline.push(plan);}
+  const facts=assessmentFacts(baseline,date,rules,restrictions);
+  const choices=types.map(type=>({type,result:{...assessType(type,facts,rules),conflicts:[]}}));
+  if(!plans.length)return choices;
+  const candidates=choices.filter(({result})=>result.ok).map(({type,result})=>({type,result,waitEnd:addDays(date,rules.waits[type])}));
+  if(!candidates.length)return choices;
+  const lastWait=candidates.reduce((end,c)=>c.waitEnd>end?c.waitEnd:end,date);
+  for(const later of plans){
+    if(later.id===id||later.date<=date)continue;
+    const lower=yearStart(later.date),inAnnualWindow=date>lower||(date===lower&&rules.boundary==='include');
+    if(!inAnnualWindow&&later.date>=lastWait)continue;
+    const beforeFacts=assessmentFacts(baseline,later.date,rules,restrictions,later.id);
+    const becomesPrevious=!beforeFacts.previous||date>beforeFacts.previous.date;
+    if(!inAnnualWindow&&!becomesPrevious)continue;
+    const before=assessType(later.type,beforeFacts,rules).issues;
+    for(const {type,result,waitEnd} of candidates){
+      if(!inAnnualWindow&&later.date>=waitEnd)continue;
+      const afterFacts={...beforeFacts};
+      if(inAnnualWindow){afterFacts.used+=rules.volumes[type];if(type==='whole')afterFacts.whole++;else afterFacts.components++;}
+      if(becomesPrevious){afterFacts.wait=waitIssue({date,type},later.date,rules);}
+      const after=assessType(later.type,afterFacts,rules).issues;
+      const added=after.filter(issue=>!before.some(prev=>prev.code===issue.code&&prev.text===issue.text));
+      if(added.length){result.conflicts.push({event:later,issues:added});result.ok=false;}
     }
   }
-  return {...own,ok:own.ok&&conflicts.length===0,conflicts};
+  return choices;
+}
+export function simulate(event,records,plans,rules=DEFAULT_RULES,restrictions=[]){return simulateTypes(event.date,event.id,[event.type],records,plans,rules,restrictions)[0].result;}
+export function simulateChoices(date,id,records,plans,rules=DEFAULT_RULES,restrictions=[]){return simulateTypes(date,id,typeKeys,records,plans,rules,restrictions);}
+export function availabilityForDate(date,records,plans=[],rules=DEFAULT_RULES,restrictions=[]){
+  const record=records.find(e=>e.date===date)||null,plan=plans.find(e=>e.date===date)||null;
+  return {record,plan,choices:simulateChoices(date,plan?.id||'__candidate__',records,plans,rules,restrictions)};
+}
+function blockedThrough(date,restrictions){
+  let through;
+  for(const item of restrictions)if(item.start<=date&&date<=item.end&&(!through||item.end>through))through=item.end;
+  return through;
 }
 export function earliest(type,from,records,plans=[],rules=DEFAULT_RULES,days=1098,restrictions=[]){
   for(let i=0;i<=days;i++){
-    const date=addDays(from,i),blocked=activeRestrictions(date,restrictions);
-    if(blocked.length){i=daysBetween(from,blocked.reduce((end,item)=>item.end>end?item.end:end,date));continue;}
-    const result=simulate({id:'__candidate__',date,type},records,plans,rules,restrictions);if(result.ok)return date;
+    const date=addDays(from,i),through=blockedThrough(date,restrictions);
+    if(through){i=daysBetween(from,through);continue;}
+    const event={id:'__candidate__',date,type},result=plans.length?simulate(event,records,plans,rules,restrictions):assess(event,records,rules);
+    if(result.ok)return date;
   }return null;
 }
-export function availabilityForDate(date,records,plans=[],rules=DEFAULT_RULES,restrictions=[]){
-  const record=records.find(e=>e.date===date)||null,plan=plans.find(e=>e.date===date)||null;
-  const choices=Object.keys(TYPES).map(type=>({type,result:simulate({id:plan?.id||'__candidate__',date,type},records,plans,rules,restrictions)}));
-  return {record,plan,choices};
+export function earliestWithoutPlans(from,records,rules=DEFAULT_RULES,days=1098,restrictions=[]){
+  const dates=typeKeys.map(type=>({type,date:null}));let remaining=dates.length;
+  for(let i=0;i<=days&&remaining;i++){
+    const date=addDays(from,i),through=blockedThrough(date,restrictions);
+    if(through){i=daysBetween(from,through);continue;}
+    const facts=timelineFacts(records,date,rules);
+    if(facts.duplicate||(facts.previous&&date<addDays(facts.previous.date,rules.waits[facts.previous.type])))continue;
+    for(const item of dates){
+      const type=item.type;
+      if(item.date||limitFlags(type,facts,rules,facts.used+rules.volumes[type]))continue;
+      item.date=date;remaining--;
+    }
+  }
+  return dates;
 }
 export function releaseDate(event,rules=DEFAULT_RULES){let date=shiftYear(event.date,1);while(inWindow(event,date,rules))date=addDays(date,1);while(inWindow(event,addDays(date,-1),rules)===false)date=addDays(date,-1);return date;}
 export function parseLines(text){
@@ -135,17 +209,4 @@ export function parseLines(text){
     if(!validDate(date)||!type){errors.push(`${i+1}번째 줄: 날짜 또는 헌혈 종류를 확인해 주세요.`);return;}
     rows.push({date,type,line:i+1});
   });return {rows,errors};
-}
-export function proposeMonthly(records,plans,start,months,preference,rules=DEFAULT_RULES,restrictions=[]){
-  const draft=[],skipped=[];const [y,m]=start.split('-').map(Number);
-  for(let k=0;k<months;k++){
-    const first=new Date(Date.UTC(y,m-1+k,1)).toISOString().slice(0,10),last=new Date(Date.UTC(y,m+k,0)).toISOString().slice(0,10),month=first.slice(0,7);
-    if([...records,...plans,...draft].some(e=>e.date.startsWith(month)))continue;
-    const dates=[];for(let d=first;d<=last;d=addDays(d,1))if(d>=start)dates.push(d);
-    dates.sort((a,b)=>{const rank=d=>weekday(d)===5?0:weekday(d)>0&&weekday(d)<6?1:2;return rank(a)-rank(b)||a.localeCompare(b);});
-    const types=preference==='whole'?['whole','mixed','platelet','plasma']:preference==='platelet'?['platelet','plasma']:preference==='mixed'?['mixed','plasma']:['plasma'];
-    let found=false;
-    for(const type of types){for(const date of dates){if(weekday(date)===0||weekday(date)===6)continue;const e={id:`draft-${k}`,date,type};if(simulate(e,records,[...plans,...draft],rules,restrictions).ok){draft.push(e);found=true;break;}}if(found)break;}
-    if(!found)skipped.push(month);
-  }return {draft,skipped};
 }
