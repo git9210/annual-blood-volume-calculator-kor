@@ -458,7 +458,7 @@ test('Decorative headings and date selector disappear while today and settings r
   h.click('dashboard');assert.doesNotMatch(h.html(),/anchor-mode|anchor-date|dashboard-controls/);
   assert.equal(h.run('anchorDate()'),'2026-10-18');
   assert.match(readFileSync(new URL('index.html',assets),'utf8'),/<strong id="date-label"><\/strong>/);
-  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.5.1/);
+  h.click('settings');assert.match(h.html(),/계산 기준과 보관/);assert.match(h.html(),/안드로이드 4.5.2/);
   assert.equal(h.requests.length,0);
 });
 
@@ -469,7 +469,7 @@ test('App updates are manual, separate from holiday consent and never mutate rec
   for(const page of ['dashboard','planner','records','settings'])h.click(page);
   assert.equal(updates,0);assert.equal(h.requests.length,0);
   assert.match(h.html(),/data-action="check-update"/);
-  assert.match(h.html(),/현재 v4.5.1/);
+  assert.match(h.html(),/현재 v4.5.2/);
   assert.match(h.html(),/데이터 사용 안내에 동의/);
   assert.match(h.html(),/보안 설정·앱 설치 제한/);
   assert.match(h.html(),/이용자 본인의 판단과 책임/);
@@ -863,6 +863,35 @@ test('Validated badge preference persists in encrypted backups without storing a
   const saved=JSON.parse(await backupCrypto.decryptBackup(JSON.parse(h.exports.at(-1).text),'milestone-backup-test'));
   assert.deepEqual(saved,h.read());assert.equal(saved.milestoneBadge,'silver');assert.equal(saved.milestoneCount,undefined);
   assert.deepEqual(h.relaunch().read(),saved);
+});
+
+test('Hidden badge stays off through restart and encrypted restore, then can be re-enabled from appearance settings',async()=>{
+  const h=harness(80,{hash:'#dashboard'}),original=h.read(),password='badge-hidden-backup-test';
+  h.click('view-milestones');
+  assert.match(h.elements.get('#dialog-content').innerHTML,/data-id="none" aria-pressed="false">표시 안 함/);
+  h.click('pick-milestone',{id:'none'});
+  const hidden=h.read();assert.deepEqual(hidden,{...original,milestoneBadge:'none'});
+  const again=h.relaunch('#dashboard');assert.doesNotMatch(again.html(),/id="dashboard-milestone"|has-milestone|data-milestone-art/);
+  again.click('settings');assert.match(again.html(),/id="settings-milestone-status">표시 안 함</);
+  again.click('view-milestones');assert.match(again.elements.get('#dialog-content').innerHTML,/data-id="none" aria-pressed="true"/);
+  again.click('pick-milestone',{id:'plasma'});assert.deepEqual(again.read(),hidden);
+  again.click('pick-milestone',{id:'house'});assert.deepEqual(again.read(),hidden);
+  again.click('pick-milestone',{id:'auto'});assert.deepEqual(again.read(),original);
+  again.click('dashboard');assert.match(again.html(),/data-milestone-art="gold"/);
+  h.click('export-backup');await h.password(password);
+  const encrypted=h.exports.at(-1).text;
+  await again.run(`restoreBackup({size:1000,text:async()=>${JSON.stringify(encrypted)}})`);
+  await again.password(password);again.elements.get('#confirm-restore').onclick();
+  assert.deepEqual(again.read(),hidden);assert.doesNotMatch(again.html(),/id="dashboard-milestone"/);
+});
+
+test('Appearance settings can disable the badge before the first award without storing any art or matched count',()=>{
+  const h=harness(0,{hash:'#settings'});
+  h.click('view-milestones');assert.doesNotMatch(h.elements.get('#dialog-content').innerHTML,/class="milestone-choice"/);
+  h.click('pick-milestone',{id:'none'});assert.equal(h.relaunch('#dashboard').read().milestoneBadge,'none');
+  const noScan=h.run(`displayedMilestone({milestoneBadge:'none',get records(){throw Error('Do not inspect history for hidden badges')}})`);
+  assert.equal(noScan,null);
+  h.click('demo');h.click('settings');h.click('view-milestones');assert.equal(h.elements.get('#dialog').open,false);assert.equal(h.read().milestoneBadge,'none');
 });
 
 test('Screen editing is offered on all three content pages and requires current-page confirmation',()=>{

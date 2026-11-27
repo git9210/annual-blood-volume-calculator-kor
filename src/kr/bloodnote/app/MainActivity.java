@@ -49,7 +49,8 @@ public final class MainActivity extends Activity {
     private static final Set<String> ASSETS = new HashSet<>(Arrays.asList(
         "index.html", "app.mjs", "engine.mjs", "calendar-view.mjs", "holidays.mjs",
         "holiday-snapshot.mjs", "licenses.mjs", "certificate-import.mjs", "secure-storage.mjs", "backup-crypto.mjs",
-        "screen-layout.mjs", "layout-drag.mjs", "style.css", "brand-blood.webp", "brand-pastel.webp", "brand-initial.webp", "milestones.webp",
+        "screen-layout.mjs", "layout-drag.mjs", "style.css", "brand-blood.webp", "brand-pastel.webp", "brand-initial.webp",
+        "milestone-silver.webp", "milestone-gold.webp", "milestone-honor.webp", "milestone-grand.webp", "milestone-highest.webp", "milestone-house.webp",
         "holiday-data-license.txt"
     ));
     private static final int IMPORT_FILE = 101, EXPORT_FILE = 102;
